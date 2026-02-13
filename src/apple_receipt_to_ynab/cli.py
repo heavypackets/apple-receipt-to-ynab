@@ -41,7 +41,7 @@ def main() -> int:
 
     try:
         result = process_receipt(
-            pdf_path=args.pdf_path,
+            receipt_path=args.receipt_path,
             config_path=config_path,
             log_path=args.log,
             ynab_budget_id=budget_id,
@@ -62,9 +62,9 @@ def main() -> int:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="apple-receipt-to-ynab",
-        description="Parse Apple subscription receipt PDFs and write YNAB split transactions.",
+        description="Parse Apple subscription receipt files (.eml preferred, .pdf supported) and write YNAB split transactions.",
     )
-    parser.add_argument("pdf_path", type=Path, help="Path to local Apple receipt PDF.")
+    parser.add_argument("receipt_path", type=Path, help="Path to local Apple receipt file (.eml or .pdf).")
     parser.add_argument(
         "--config",
         type=Path,

@@ -1,10 +1,10 @@
 # apple-receipt-to-ynab
 
-Local CLI tool that parses Apple App Store subscription receipt PDFs, maps each subscription line to YNAB category/payee rules in YAML, proportionally allocates receipt tax across lines, and creates one split transaction in YNAB.
+Local CLI tool that parses Apple App Store subscription receipt emails (`.eml`), maps each subscription line to YNAB category/payee rules in YAML, proportionally allocates receipt tax across lines, and creates one split transaction in YNAB.
 
 ## What it does
 
-- Reads a local receipt PDF.
+- Reads a local receipt file (`.eml` preferred, `.pdf` also supported).
 - Extracts subscription lines, tax total, and grand total.
 - Matches each subscription with `mappings.yaml` or `mappings.yml` in the working directory by default (or a path passed with `--config`).
 - Splits tax proportionally across subscription lines using largest-remainder reconciliation.
@@ -87,19 +87,19 @@ brew install jq
 Dry run:
 
 ```bash
-apple-receipt-to-ynab /path/to/apple_receipt.pdf --dry-run
+apple-receipt-to-ynab /path/to/apple_receipt.eml --dry-run
 ```
 
 Write to YNAB:
 
 ```bash
-apple-receipt-to-ynab /path/to/apple_receipt.pdf
+apple-receipt-to-ynab /path/to/apple_receipt.eml
 ```
 
 Optional overrides:
 
 ```bash
-apple-receipt-to-ynab /path/to/apple_receipt.pdf \
+apple-receipt-to-ynab /path/to/apple_receipt.eml \
   --config /path/to/custom-mappings.yaml \
   --log logs/apple_receipt_to_ynab.log
 ```
@@ -108,4 +108,6 @@ apple-receipt-to-ynab /path/to/apple_receipt.pdf \
 
 - Parent YNAB transaction amount is the sum of split line amounts.
 - Split lines include per-line payee and category.
-- This parser uses heuristics; if your Apple PDF format differs, update parser patterns in `src/apple_receipt_to_ynab/parser.py`.
+- For `.eml` imports, the parser reads MIME parts directly and parses the HTML receipt body (including `subscription-lockup__container` tables) after quoted-printable decoding.
+- If you print emails to PDF, the parser strips common wrapper noise (for example `From:`, `Subject:`, `Page X of Y`, and trailing print footer text), but native `.eml` is more reliable.
+- This parser uses heuristics and template-aware rules; if Apple changes email markup, update `src/apple_receipt_to_ynab/parser.py`.

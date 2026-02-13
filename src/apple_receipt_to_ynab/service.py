@@ -9,7 +9,6 @@ from apple_receipt_to_ynab.config import load_mapping_config
 from apple_receipt_to_ynab.logger import append_log_block
 from apple_receipt_to_ynab.matcher import match_subscriptions
 from apple_receipt_to_ynab.models import ParsedReceipt, SplitLine
-from apple_receipt_to_ynab.parser import parse_receipt_pdf
 from apple_receipt_to_ynab.tax import build_split_lines
 from apple_receipt_to_ynab.utils import dollars_to_milliunits, milliunits_to_dollars, now_local_iso
 from apple_receipt_to_ynab.ynab import YnabClient, build_parent_transaction
@@ -30,7 +29,7 @@ class ProcessResult:
 
 
 def process_receipt(
-    pdf_path: Path,
+    receipt_path: Path,
     config_path: Path,
     log_path: Path,
     ynab_budget_id: str,
@@ -39,7 +38,9 @@ def process_receipt(
 ) -> ProcessResult:
     try:
         config = load_mapping_config(config_path)
-        receipt = parse_receipt_pdf(pdf_path, default_currency=config.defaults.default_currency)
+        receipt = _parse_receipt_with_best_available_parser(
+            receipt_path, default_currency=config.defaults.default_currency
+        )
         matched = match_subscriptions(receipt.subscriptions, config)
         split_lines = build_split_lines(matched, receipt.tax_total)
         grand_total_milliunits = dollars_to_milliunits(receipt.grand_total)
@@ -101,7 +102,7 @@ def process_receipt(
             log_path,
             [
                 f"[{now_local_iso()}] RUN START",
-                f"PDF: {pdf_path}",
+                f"Receipt File: {receipt_path}",
                 f"Result: FAILED {exc}",
                 "RUN END",
                 "",
@@ -142,7 +143,7 @@ def _build_log_lines(
     message: str,
     transaction_id: str | None,
 ) -> list[str]:
-    lines = [f"[{now_local_iso()}] RUN START", f"PDF: {receipt.source_pdf}"]
+    lines = [f"[{now_local_iso()}] RUN START", f"Receipt File: {receipt.source_pdf}"]
     lines.append(
         "Receipt: "
         f"id={receipt.receipt_id} date={receipt.receipt_date.isoformat()} currency={receipt.currency}"
@@ -192,3 +193,23 @@ def _extract_transaction_id(payload: dict[str, Any]) -> str | None:
             if isinstance(value, str):
                 return value
     return None
+
+
+def _parse_receipt_with_best_available_parser(receipt_path: Path, default_currency: str) -> ParsedReceipt:
+    # Import lazily to avoid hard failures when a user's venv has a stale parser module installed.
+    from apple_receipt_to_ynab import parser as parser_module
+
+    parse_receipt_file = getattr(parser_module, "parse_receipt_file", None)
+    if callable(parse_receipt_file):
+        return parse_receipt_file(receipt_path, default_currency=default_currency)
+
+    parse_receipt_pdf = getattr(parser_module, "parse_receipt_pdf", None)
+    if callable(parse_receipt_pdf):
+        if receipt_path.suffix.lower() == ".eml":
+            raise ValidationError(
+                "This installed parser does not support .eml yet. "
+                "Reinstall the app from the latest source and rerun."
+            )
+        return parse_receipt_pdf(receipt_path, default_currency=default_currency)
+
+    raise ValidationError("No compatible parser entry point found in apple_receipt_to_ynab.parser.")
