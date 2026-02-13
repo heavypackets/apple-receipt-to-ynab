@@ -1,0 +1,98 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+from pathlib import Path
+from typing import Literal
+
+MatchType = Literal["exact", "contains", "regex"]
+
+
+@dataclass(frozen=True)
+class SubscriptionLine:
+    description: str
+    base_amount: Decimal
+
+
+@dataclass(frozen=True)
+class ParsedReceipt:
+    source_pdf: Path
+    receipt_id: str
+    receipt_date: date
+    currency: str
+    subscriptions: list[SubscriptionLine]
+    tax_total: Decimal
+    grand_total: Decimal
+    raw_text: str
+
+
+@dataclass(frozen=True)
+class MatchSpec:
+    type: MatchType
+    value: str
+
+
+@dataclass(frozen=True)
+class MappingRule:
+    id: str
+    enabled: bool
+    match: MatchSpec
+    friendly_name: str
+    ynab_category_id: str
+    ynab_payee_id: str | None = None
+    ynab_payee_name: str | None = None
+    memo_template: str | None = None
+
+
+@dataclass(frozen=True)
+class MappingDefaults:
+    ynab_account_id: str
+    default_payee_name: str | None = None
+    fallback_category_id: str | None = None
+    default_currency: str = "USD"
+
+
+@dataclass(frozen=True)
+class FallbackMapping:
+    enabled: bool
+    friendly_name: str
+    ynab_category_id: str | None = None
+    ynab_payee_id: str | None = None
+    ynab_payee_name: str | None = None
+    memo_template: str | None = None
+
+
+@dataclass(frozen=True)
+class MappingConfig:
+    version: int
+    defaults: MappingDefaults
+    rules: list[MappingRule]
+    fallback: FallbackMapping | None = None
+
+
+@dataclass(frozen=True)
+class MatchedSubscription:
+    source_description: str
+    friendly_name: str
+    base_amount: Decimal
+    ynab_category_id: str
+    ynab_payee_id: str | None
+    ynab_payee_name: str | None
+    memo: str | None
+    mapping_rule_id: str
+
+
+@dataclass(frozen=True)
+class SplitLine:
+    friendly_name: str
+    source_description: str
+    base_milliunits: int
+    tax_milliunits: int
+    total_milliunits: int
+    ynab_category_id: str
+    ynab_payee_id: str | None
+    ynab_payee_name: str | None
+    memo: str | None
+    mapping_rule_id: str
+

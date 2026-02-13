@@ -1,0 +1,33 @@
+version: 1
+defaults:
+  ynab_account_id: "replace-with-ynab-account-id"
+  default_payee_name: "Apple"
+  fallback_category_id: "replace-with-fallback-category-id"
+  currency: "USD"
+
+rules:
+  - id: apple_music
+    enabled: true
+    match:
+      type: exact
+      value: "Apple Music"
+    friendly_name: "Apple Music"
+    ynab_category_id: "replace-with-category-id"
+    ynab_payee_name: "Apple Music"
+    memo_template: "Apple subscription: {raw_description}"
+
+  - id: icloud
+    enabled: true
+    match:
+      type: contains
+      value: "iCloud+"
+    friendly_name: "iCloud Storage"
+    ynab_category_id: "replace-with-category-id"
+    ynab_payee_name: "Apple iCloud"
+
+fallback:
+  enabled: true
+  friendly_name: "Unmapped Apple Subscription"
+  ynab_category_id: "replace-with-fallback-category-id"
+  ynab_payee_name: "Apple"
+
