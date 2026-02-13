@@ -6,7 +6,7 @@ Local CLI tool that parses Apple App Store subscription receipt PDFs, maps each 
 
 - Reads a local receipt PDF.
 - Extracts subscription lines, tax total, and grand total.
-- Matches each subscription with `config/mappings.yaml`.
+- Matches each subscription with `mappings.yml` or `mappings.yaml` in the working directory by default (or a path passed with `--config`).
 - Splits tax proportionally across subscription lines using largest-remainder reconciliation.
 - Creates one parent transaction with split subtransactions in YNAB.
 - Appends a plain text log entry for each run.
@@ -21,13 +21,65 @@ pip install -e .
 
 ## Configure
 
-1. Copy and edit `config/mappings.yaml`.
+1. Copy the example mapping file to your working directory:
+
+```bash
+cp examples/mappings.yml ./mappings.yml
+```
+
+1. Edit `mappings.yml` (or rename it to `mappings.yaml`) for your categories, payees, and account IDs.
 1. Provide `ynab_account_id`, category IDs, and payees.
 1. Set environment variables:
 
 ```bash
 export YNAB_API_TOKEN="your-token"
 export YNAB_BUDGET_ID="your-budget-id"
+```
+
+You can also place these values in a `.env` file in the directory where you run the command:
+
+```bash
+YNAB_API_TOKEN=your-token
+YNAB_BUDGET_ID=your-budget-id
+```
+
+Credential precedence is:
+1. CLI flags (`--ynab-api-token`, `--ynab-budget-id`)
+1. Exported environment variables
+1. `.env` file in the current working directory
+
+## Find YNAB IDs
+
+Copy/paste these commands to find the IDs needed for `mappings.yml`/`mappings.yaml`.
+
+List budgets (name + id):
+
+```bash
+curl -s -H "Authorization: Bearer $YNAB_API_TOKEN" \
+  https://api.ynab.com/v1/budgets \
+| jq -r '.data.budgets[] | [.name, .id] | @tsv'
+```
+
+List accounts in your selected budget (name + id):
+
+```bash
+curl -s -H "Authorization: Bearer $YNAB_API_TOKEN" \
+  "https://api.ynab.com/v1/budgets/$YNAB_BUDGET_ID/accounts" \
+| jq -r '.data.accounts[] | [.name, .id] | @tsv'
+```
+
+List categories in your selected budget (group + category + id):
+
+```bash
+curl -s -H "Authorization: Bearer $YNAB_API_TOKEN" \
+  "https://api.ynab.com/v1/budgets/$YNAB_BUDGET_ID/categories" \
+| jq -r '.data.category_groups[] | .name as $g | .categories[] | [$g, .name, .id] | @tsv'
+```
+
+If you do not have `jq` installed on macOS:
+
+```bash
+brew install jq
 ```
 
 ## Run
@@ -48,7 +100,7 @@ Optional overrides:
 
 ```bash
 apple-receipt-to-ynab /path/to/apple_receipt.pdf \
-  --config config/mappings.yaml \
+  --config /path/to/custom-mappings.yml \
   --log logs/apple_receipt_to_ynab.log
 ```
 
