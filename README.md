@@ -1,12 +1,12 @@
 # apple-receipt-to-ynab
 
-Local CLI tool that parses Apple App Store subscription receipt PDFs, maps each subscription line to friendly names via YAML rules, proportionally allocates receipt tax across lines, and creates one split transaction in YNAB.
+Local CLI tool that parses Apple App Store subscription receipt PDFs, maps each subscription line to YNAB category/payee rules in YAML, proportionally allocates receipt tax across lines, and creates one split transaction in YNAB.
 
 ## What it does
 
 - Reads a local receipt PDF.
 - Extracts subscription lines, tax total, and grand total.
-- Matches each subscription with `mappings.yml` or `mappings.yaml` in the working directory by default (or a path passed with `--config`).
+- Matches each subscription with `mappings.yaml` or `mappings.yml` in the working directory by default (or a path passed with `--config`).
 - Splits tax proportionally across subscription lines using largest-remainder reconciliation.
 - Creates one parent transaction with split subtransactions in YNAB.
 - Appends a plain text log entry for each run.
@@ -24,10 +24,10 @@ pip install -e .
 1. Copy the example mapping file to your working directory:
 
 ```bash
-cp examples/mappings.yml ./mappings.yml
+cp examples/mappings.yaml ./mappings.yaml
 ```
 
-1. Edit `mappings.yml` (or rename it to `mappings.yaml`) for your categories, payees, and account IDs.
+1. Edit `mappings.yaml` (or rename to `mappings.yml`) for your categories, payees, and account IDs.
 1. Provide `ynab_account_id`, category IDs, and payees.
 1. Set environment variables:
 
@@ -50,7 +50,7 @@ Credential precedence is:
 
 ## Find YNAB IDs
 
-Copy/paste these commands to find the IDs needed for `mappings.yml`/`mappings.yaml`.
+Copy/paste these commands to find the IDs needed for `mappings.yaml`/`mappings.yml`.
 
 List budgets (name + id):
 
@@ -100,7 +100,7 @@ Optional overrides:
 
 ```bash
 apple-receipt-to-ynab /path/to/apple_receipt.pdf \
-  --config /path/to/custom-mappings.yml \
+  --config /path/to/custom-mappings.yaml \
   --log logs/apple_receipt_to_ynab.log
 ```
 

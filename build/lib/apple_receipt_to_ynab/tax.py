@@ -22,7 +22,6 @@ def build_split_lines(subscriptions: list[MatchedSubscription], tax_total: Decim
     for sub, base, tax in zip(subscriptions, base_milliunits, allocated_tax):
         split_lines.append(
             SplitLine(
-                friendly_name=sub.friendly_name,
                 source_description=sub.source_description,
                 base_milliunits=base,
                 tax_milliunits=tax,

@@ -38,7 +38,6 @@ class MappingRule:
     id: str
     enabled: bool
     match: MatchSpec
-    friendly_name: str
     ynab_category_id: str
     ynab_payee_id: str | None = None
     ynab_payee_name: str | None = None
@@ -56,7 +55,6 @@ class MappingDefaults:
 @dataclass(frozen=True)
 class FallbackMapping:
     enabled: bool
-    friendly_name: str
     ynab_category_id: str | None = None
     ynab_payee_id: str | None = None
     ynab_payee_name: str | None = None
@@ -74,7 +72,6 @@ class MappingConfig:
 @dataclass(frozen=True)
 class MatchedSubscription:
     source_description: str
-    friendly_name: str
     base_amount: Decimal
     ynab_category_id: str
     ynab_payee_id: str | None
@@ -85,7 +82,6 @@ class MatchedSubscription:
 
 @dataclass(frozen=True)
 class SplitLine:
-    friendly_name: str
     source_description: str
     base_milliunits: int
     tax_milliunits: int
@@ -95,4 +91,3 @@ class SplitLine:
     ynab_payee_name: str | None
     memo: str | None
     mapping_rule_id: str
-

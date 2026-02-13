@@ -59,7 +59,7 @@ def build_parent_transaction(
         subtransactions.append(
             {
                 "amount": sub_amount,
-                "memo": line.memo or line.friendly_name,
+                "memo": line.memo or line.ynab_payee_name or line.source_description,
                 "payee_id": line.ynab_payee_id,
                 "payee_name": line.ynab_payee_name,
                 "category_id": line.ynab_category_id,
@@ -97,4 +97,3 @@ def _safe_json(response: httpx.Response) -> dict[str, Any]:
     if isinstance(value, dict):
         return value
     return {"raw": value}
-

@@ -19,28 +19,27 @@ def test_match_precedence_exact_then_contains_then_regex() -> None:
                 id="contains_rule",
                 enabled=True,
                 match=MatchSpec(type="contains", value="Apple"),
-                friendly_name="Contains",
                 ynab_category_id="c1",
+                ynab_payee_name="Contains",
             ),
             MappingRule(
                 id="exact_rule",
                 enabled=True,
                 match=MatchSpec(type="exact", value="Apple Music"),
-                friendly_name="Exact",
                 ynab_category_id="c2",
+                ynab_payee_name="Exact",
             ),
             MappingRule(
                 id="regex_rule",
                 enabled=True,
                 match=MatchSpec(type="regex", value=r"(?i)apple\s+music"),
-                friendly_name="Regex",
                 ynab_category_id="c3",
+                ynab_payee_name="Regex",
             ),
         ],
         fallback=None,
     )
 
     matched = match_subscriptions([SubscriptionLine(description="Apple Music", base_amount=Decimal("9.99"))], config)
-    assert matched[0].friendly_name == "Exact"
+    assert matched[0].ynab_payee_name == "Exact"
     assert matched[0].mapping_rule_id == "exact_rule"
-

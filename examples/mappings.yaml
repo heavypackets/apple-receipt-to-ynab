@@ -11,7 +11,6 @@ rules:
     match:
       type: exact
       value: "Apple Music"
-    friendly_name: "Apple Music"
     ynab_category_id: "replace-with-category-id"
     ynab_payee_name: "Apple Music"
     memo_template: "Apple subscription: {raw_description}"
@@ -21,13 +20,10 @@ rules:
     match:
       type: contains
       value: "iCloud+"
-    friendly_name: "iCloud Storage"
     ynab_category_id: "replace-with-category-id"
     ynab_payee_name: "Apple iCloud"
 
 fallback:
   enabled: true
-  friendly_name: "Unmapped Apple Subscription"
   ynab_category_id: "replace-with-fallback-category-id"
   ynab_payee_name: "Apple"
-

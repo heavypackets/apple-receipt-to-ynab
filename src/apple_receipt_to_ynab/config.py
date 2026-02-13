@@ -49,7 +49,6 @@ def load_mapping_config(path: Path) -> MappingConfig:
             raise ConfigError("fallback must be a mapping if provided.")
         fallback = FallbackMapping(
             enabled=bool(fallback_raw.get("enabled", True)),
-            friendly_name=_required_str(fallback_raw, "friendly_name"),
             ynab_category_id=_optional_str(fallback_raw, "ynab_category_id"),
             ynab_payee_id=_optional_str(fallback_raw, "ynab_payee_id"),
             ynab_payee_name=_optional_str(fallback_raw, "ynab_payee_name"),
@@ -72,7 +71,6 @@ def _parse_rule(raw: Any) -> MappingRule:
         id=_required_str(raw, "id"),
         enabled=bool(raw.get("enabled", True)),
         match=match,
-        friendly_name=_required_str(raw, "friendly_name"),
         ynab_category_id=_required_str(raw, "ynab_category_id"),
         ynab_payee_id=_optional_str(raw, "ynab_payee_id"),
         ynab_payee_name=_optional_str(raw, "ynab_payee_name"),
@@ -108,4 +106,3 @@ def _required_int(raw: dict[str, Any], key: str) -> int:
     if not isinstance(value, int):
         raise ConfigError(f"'{key}' must be an integer.")
     return value
-

@@ -30,7 +30,6 @@ def match_subscriptions(
                 matched.append(
                     MatchedSubscription(
                         source_description=sub.description,
-                        friendly_name=config.fallback.friendly_name,
                         base_amount=sub.base_amount,
                         ynab_category_id=category_id,
                         ynab_payee_id=config.fallback.ynab_payee_id,
@@ -47,7 +46,6 @@ def match_subscriptions(
         matched.append(
             MatchedSubscription(
                 source_description=sub.description,
-                friendly_name=rule.friendly_name,
                 base_amount=sub.base_amount,
                 ynab_category_id=rule.ynab_category_id,
                 ynab_payee_id=rule.ynab_payee_id,
@@ -84,4 +82,3 @@ def _render_memo(template: str | None, raw_description: str) -> str | None:
     if template is None:
         return None
     return template.format(raw_description=raw_description)
-

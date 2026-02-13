@@ -149,9 +149,10 @@ def _build_log_lines(
     )
     lines.append("Items:")
     for line in split_lines:
+        label = line.ynab_payee_name or line.ynab_payee_id or line.source_description
         lines.append(
             "- "
-            f"{line.friendly_name} | "
+            f"{label} | "
             f"source={line.source_description} | "
             f"base={milliunits_to_dollars(line.base_milliunits)} | "
             f"tax={milliunits_to_dollars(line.tax_milliunits)} | "
