@@ -104,8 +104,7 @@ Optional overrides:
 ```bash
 apple-receipt-to-ynab /path/to/apple_receipt.eml \
   --config /path/to/custom-mappings.yaml \
-  --log logs/apple_receipt_to_ynab.log \
-  --reimport
+  --log logs/apple_receipt_to_ynab.log
 ```
 
 ## Notes
@@ -115,6 +114,7 @@ apple-receipt-to-ynab /path/to/apple_receipt.eml \
 - A multi-subscription receipt produces a split YNAB transaction.
 - For multi-subscription receipts, only the parent transaction has a memo (`Apple receipt <receipt_id>`).
 - If fallback is used for any subscription and `fallback.ynab_flag_color` is set, the YNAB transaction is flagged (valid colors: `red`, `orange`, `yellow`, `green`, `blue`, `purple`).
-- `--reimport` allows reposting a duplicate receipt by retrying with randomized `receipt_id#NN` variants to generate a new `import_id` after a YNAB 409 duplicate response.
+- Transactions are posted without `import_id`, so YNAB treats them as user-entered.
+- HTTP 409 responses are treated as normal API errors (same as other non-2xx responses).
 - The parser reads MIME parts directly and parses the HTML receipt body (supports both `subscription-lockup__container` and `item-cell`/`price-cell` Apple receipt templates) after quoted-printable decoding.
 - This parser uses heuristics and template-aware rules; if Apple changes email markup, update `src/apple_receipt_to_ynab/parser.py`.

@@ -50,7 +50,6 @@ def test_main_prints_parsed_subscriptions_in_dry_run(tmp_path: Path, monkeypatch
             status="DRY_RUN",
             message="Dry run completed. No transaction posted.",
             receipt_id="ABC123",
-            import_id="apple:importid",
             parent_amount_milliunits=-13980,
             parsed_subscriptions=(
                 SubscriptionLine(description="Apple Music", base_amount=Decimal("10.99")),

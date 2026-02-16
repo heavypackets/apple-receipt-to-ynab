@@ -48,7 +48,6 @@ def main() -> int:
             ynab_budget_id=budget_id,
             ynab_api_token=api_token,
             dry_run=args.dry_run,
-            reimport=args.reimport,
         )
     except (ConfigError, ReceiptParseError, MappingMatchError, TaxAllocationError, ValidationError, YnabApiError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -58,7 +57,7 @@ def main() -> int:
         _print_dry_run_subscriptions(result.parsed_subscriptions)
 
     print(
-        f"{result.status}: receipt={result.receipt_id} import_id={result.import_id} "
+        f"{result.status}: receipt={result.receipt_id} "
         f"amount_milliunits={result.parent_amount_milliunits} {result.message}"
     )
     return 0
@@ -85,11 +84,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ynab-api-token", type=str, default=None, help="YNAB API token. Optional if YNAB_API_TOKEN is set.")
     parser.add_argument("--ynab-budget-id", type=str, default=None, help="YNAB budget id. Optional if YNAB_BUDGET_ID is set.")
     parser.add_argument("--dry-run", action="store_true", help="Parse and compute splits, but do not call YNAB API.")
-    parser.add_argument(
-        "--reimport",
-        action="store_true",
-        help="If YNAB returns duplicate import_id (409), retry with randomized receipt_id#NN suffix values to force a new import_id.",
-    )
     return parser
 
 

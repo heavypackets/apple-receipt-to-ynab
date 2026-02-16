@@ -3,6 +3,7 @@ from decimal import Decimal
 from pathlib import Path
 
 import apple_receipt_to_ynab.service as service
+import pytest
 from apple_receipt_to_ynab.models import (
     FallbackMapping,
     MatchedSubscription,
@@ -12,8 +13,8 @@ from apple_receipt_to_ynab.models import (
     SplitLine,
     SubscriptionLine,
 )
-from apple_receipt_to_ynab.service import _generate_reimport_receipt_id, _resolve_ynab_flag_color, process_receipt
-from apple_receipt_to_ynab.ynab import build_import_id
+from apple_receipt_to_ynab.service import _resolve_ynab_flag_color, process_receipt
+from apple_receipt_to_ynab.ynab import YnabApiError
 
 
 def test_resolve_ynab_flag_color_returns_color_when_fallback_was_used() -> None:
@@ -58,13 +59,7 @@ def test_resolve_ynab_flag_color_ignores_mapped_only_transactions() -> None:
     assert _resolve_ynab_flag_color(config, matched) is None
 
 
-def test_generate_reimport_receipt_id_uses_pound_and_two_digits(monkeypatch) -> None:
-    monkeypatch.setattr(service.random, "randint", lambda _a, _b: 7)
-    value = _generate_reimport_receipt_id("MSD3TZ09X1", attempted_ids=set())
-    assert value == "MSD3TZ09X1#07"
-
-
-def test_process_receipt_retries_duplicate_when_reimport_enabled(tmp_path: Path, monkeypatch) -> None:
+def test_process_receipt_posts_once_when_not_dry_run(tmp_path: Path, monkeypatch) -> None:
     config = MappingConfig(
         version=1,
         defaults=MappingDefaults(ynab_account_id="acct-1"),
@@ -111,8 +106,6 @@ def test_process_receipt_retries_duplicate_when_reimport_enabled(tmp_path: Path,
 
         def create_transaction(self, budget_id: str, transaction: dict[str, object]) -> tuple[str, dict[str, object]]:
             transactions.append(dict(transaction))
-            if len(transactions) == 1:
-                return "duplicate-noop", {}
             return "created", {"data": {"transaction": {"id": "tx-1"}}}
 
         def close(self) -> None:
@@ -124,8 +117,6 @@ def test_process_receipt_retries_duplicate_when_reimport_enabled(tmp_path: Path,
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
     monkeypatch.setattr(service, "YnabClient", FakeClient)
     monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(service.random, "randint", lambda _a, _b: 7)
-
     result = process_receipt(
         receipt_path=tmp_path / "receipt.eml",
         config_path=tmp_path / "mappings.yml",
@@ -133,18 +124,15 @@ def test_process_receipt_retries_duplicate_when_reimport_enabled(tmp_path: Path,
         ynab_budget_id="budget-1",
         ynab_api_token="token-1",
         dry_run=False,
-        reimport=True,
     )
 
     assert result.status == "created"
     assert result.transaction_id == "tx-1"
-    assert len(transactions) == 2
-    assert transactions[0]["import_id"] != transactions[1]["import_id"]
-    assert transactions[1]["import_id"] == build_import_id("RID-1#07", date(2026, 2, 16), 10800)
-    assert result.import_id == transactions[1]["import_id"]
+    assert len(transactions) == 1
+    assert "import_id" not in transactions[0]
 
 
-def test_process_receipt_duplicate_without_reimport_stays_noop(tmp_path: Path, monkeypatch) -> None:
+def test_process_receipt_409_raises_ynab_api_error(tmp_path: Path, monkeypatch) -> None:
     config = MappingConfig(
         version=1,
         defaults=MappingDefaults(ynab_account_id="acct-1"),
@@ -191,7 +179,7 @@ def test_process_receipt_duplicate_without_reimport_stays_noop(tmp_path: Path, m
 
         def create_transaction(self, budget_id: str, transaction: dict[str, object]) -> tuple[str, dict[str, object]]:
             call_count["value"] += 1
-            return "duplicate-noop", {}
+            raise YnabApiError("YNAB API 409: duplicate")
 
         def close(self) -> None:
             return None
@@ -203,15 +191,14 @@ def test_process_receipt_duplicate_without_reimport_stays_noop(tmp_path: Path, m
     monkeypatch.setattr(service, "YnabClient", FakeClient)
     monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
 
-    result = process_receipt(
-        receipt_path=tmp_path / "receipt.eml",
-        config_path=tmp_path / "mappings.yml",
-        log_path=tmp_path / "run.log",
-        ynab_budget_id="budget-1",
-        ynab_api_token="token-1",
-        dry_run=False,
-        reimport=False,
-    )
+    with pytest.raises(YnabApiError, match="409"):
+        process_receipt(
+            receipt_path=tmp_path / "receipt.eml",
+            config_path=tmp_path / "mappings.yml",
+            log_path=tmp_path / "run.log",
+            ynab_budget_id="budget-1",
+            ynab_api_token="token-1",
+            dry_run=False,
+        )
 
     assert call_count["value"] == 1
-    assert result.status == "duplicate-noop"

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 from datetime import date
 from typing import Any
 
@@ -30,15 +29,7 @@ class YnabClient:
         response = self._client.post(f"/budgets/{budget_id}/transactions", json={"transaction": transaction})
         if response.status_code in (200, 201):
             return "created", response.json()
-        if response.status_code == 409:
-            return "duplicate-noop", _safe_json(response)
         raise YnabApiError(_format_error(response))
-
-
-def build_import_id(receipt_id: str, receipt_date: date, grand_total_milliunits: int) -> str:
-    seed = f"{receipt_id}|{receipt_date.isoformat()}|{grand_total_milliunits}"
-    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:24]
-    return f"apple:{digest}"
 
 
 def build_parent_transaction(
@@ -53,13 +44,11 @@ def build_parent_transaction(
         raise ValueError("Cannot build YNAB transaction without split lines.")
 
     sign = -1 if grand_total_milliunits >= 0 else 1
-    import_id = build_import_id(receipt_id=receipt_id, receipt_date=receipt_date, grand_total_milliunits=grand_total_milliunits)
     transaction: dict[str, Any] = {
         "account_id": account_id,
         "date": receipt_date.isoformat(),
         "cleared": "cleared",
         "approved": False,
-        "import_id": import_id,
     }
     if ynab_flag_color is not None:
         transaction["flag_color"] = ynab_flag_color

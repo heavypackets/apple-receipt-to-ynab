@@ -26,7 +26,8 @@ def test_build_parent_transaction_single_line_has_no_subtransactions() -> None:
     assert tx["amount"] == -11870
     assert tx["category_id"] == "cat-1"
     assert tx["payee_name"] == "Apple Music"
-    assert tx["memo"] == "Apple receipt R-1"
+    assert tx["memo"] == "Receipt: R-1"
+    assert "import_id" not in tx
     assert "subtransactions" not in tx
 
 
@@ -65,6 +66,7 @@ def test_build_parent_transaction_multiple_lines_uses_subtransactions() -> None:
     assert tx["category_id"] is None
     assert tx["payee_name"] == "Apple"
     assert len(tx["subtransactions"]) == 2
+    assert "import_id" not in tx
     assert "memo" not in tx["subtransactions"][0]
     assert "memo" not in tx["subtransactions"][1]
 
