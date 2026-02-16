@@ -98,24 +98,24 @@ def test_process_receipt_posts_once_when_not_dry_run(tmp_path: Path, monkeypatch
             mapping_rule_id="apple_music",
         )
     ]
-    transactions: list[dict[str, object]] = []
-
-    class FakeClient:
-        def __init__(self, api_token: str) -> None:
-            self.api_token = api_token
-
-        def create_transaction(self, budget_id: str, transaction: dict[str, object]) -> tuple[str, dict[str, object]]:
-            transactions.append(dict(transaction))
-            return "created", {"data": {"transaction": {"id": "tx-1"}}}
-
-        def close(self) -> None:
-            return None
+    post_calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(service, "load_mapping_config", lambda _path: config)
     monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
     monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
-    monkeypatch.setattr(service, "YnabClient", FakeClient)
+
+    def _fake_post(ynab_budget_id: str, ynab_api_token: str, transaction: dict[str, object]) -> str:
+        post_calls.append(
+            {
+                "budget_id": ynab_budget_id,
+                "api_token": ynab_api_token,
+                "transaction": dict(transaction),
+            }
+        )
+        return "tx-1"
+
+    monkeypatch.setattr(service, "_post_ynab_transaction", _fake_post)
     monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
     result = process_receipt(
         receipt_path=tmp_path / "receipt.eml",
@@ -128,8 +128,11 @@ def test_process_receipt_posts_once_when_not_dry_run(tmp_path: Path, monkeypatch
 
     assert result.status == "created"
     assert result.transaction_id == "tx-1"
-    assert len(transactions) == 1
-    assert "import_id" not in transactions[0]
+    assert len(post_calls) == 1
+    assert post_calls[0]["budget_id"] == "budget-1"
+    assert post_calls[0]["api_token"] == "token-1"
+    assert "import_id" not in post_calls[0]["transaction"]
+    assert post_calls[0]["transaction"]["memo"] == "Receipt: RID-1"
 
 
 def test_process_receipt_409_raises_ynab_api_error(tmp_path: Path, monkeypatch) -> None:
@@ -173,22 +176,16 @@ def test_process_receipt_409_raises_ynab_api_error(tmp_path: Path, monkeypatch) 
     ]
     call_count = {"value": 0}
 
-    class FakeClient:
-        def __init__(self, api_token: str) -> None:
-            self.api_token = api_token
-
-        def create_transaction(self, budget_id: str, transaction: dict[str, object]) -> tuple[str, dict[str, object]]:
-            call_count["value"] += 1
-            raise YnabApiError("YNAB API 409: duplicate")
-
-        def close(self) -> None:
-            return None
-
     monkeypatch.setattr(service, "load_mapping_config", lambda _path: config)
     monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
     monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
-    monkeypatch.setattr(service, "YnabClient", FakeClient)
+
+    def _raise_409(ynab_budget_id: str, ynab_api_token: str, transaction: dict[str, object]) -> str:
+        call_count["value"] += 1
+        raise YnabApiError("YNAB API 409: duplicate")
+
+    monkeypatch.setattr(service, "_post_ynab_transaction", _raise_409)
     monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
 
     with pytest.raises(YnabApiError, match="409"):

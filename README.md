@@ -16,7 +16,13 @@ Local CLI tool that parses Apple App Store subscription receipt emails (`.eml`),
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+python -m pip install .
+```
+
+If reinstalling and pip reports metadata/uninstall issues, repair with:
+
+```bash
+python -m pip install --no-build-isolation --no-deps --ignore-installed .
 ```
 
 ## Configure
@@ -116,5 +122,6 @@ apple-receipt-to-ynab /path/to/apple_receipt.eml \
 - If fallback is used for any subscription and `fallback.ynab_flag_color` is set, the YNAB transaction is flagged (valid colors: `red`, `orange`, `yellow`, `green`, `blue`, `purple`).
 - Transactions are posted without `import_id`, so YNAB treats them as user-entered.
 - HTTP 409 responses are treated as normal API errors (same as other non-2xx responses).
+- Transaction posting uses the official Python `ynab` SDK.
 - The parser reads MIME parts directly and parses the HTML receipt body (supports both `subscription-lockup__container` and `item-cell`/`price-cell` Apple receipt templates) after quoted-printable decoding.
 - This parser uses heuristics and template-aware rules; if Apple changes email markup, update `src/apple_receipt_to_ynab/parser.py`.

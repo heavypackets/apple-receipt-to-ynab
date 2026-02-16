@@ -9,7 +9,7 @@ description = "Parse Apple subscription receipt emails and create YNAB split tra
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "httpx>=0.27.0",
+  "ynab>=1.5.1",
   "PyYAML>=6.0.1",
 ]
 
