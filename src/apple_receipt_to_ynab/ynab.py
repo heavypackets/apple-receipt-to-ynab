@@ -3,34 +3,11 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-import httpx
-
 from apple_receipt_to_ynab.models import SplitLine
-
-YNAB_BASE_URL = "https://api.ynab.com/v1"
 
 
 class YnabApiError(RuntimeError):
     pass
-
-
-class YnabClient:
-    def __init__(self, api_token: str, base_url: str = YNAB_BASE_URL) -> None:
-        self._client = httpx.Client(
-            base_url=base_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {api_token}"},
-            timeout=30.0,
-        )
-
-    def close(self) -> None:
-        self._client.close()
-
-    def create_transaction(self, budget_id: str, transaction: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        response = self._client.post(f"/budgets/{budget_id}/transactions", json={"transaction": transaction})
-        if response.status_code in (200, 201):
-            return "created", response.json()
-        raise YnabApiError(_format_error(response))
-
 
 def build_parent_transaction(
     account_id: str,
@@ -89,18 +66,3 @@ def build_parent_transaction(
         }
     )
     return transaction
-
-
-def _format_error(response: httpx.Response) -> str:
-    payload = _safe_json(response)
-    return f"YNAB API {response.status_code}: {payload if payload else response.text}"
-
-
-def _safe_json(response: httpx.Response) -> dict[str, Any]:
-    try:
-        value = response.json()
-    except ValueError:
-        return {"raw": response.text}
-    if isinstance(value, dict):
-        return value
-    return {"raw": value}

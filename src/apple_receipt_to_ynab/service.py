@@ -11,7 +11,7 @@ from apple_receipt_to_ynab.models import MappingConfig, MatchedSubscription, Par
 from apple_receipt_to_ynab.parser import parse_receipt_file
 from apple_receipt_to_ynab.tax import build_split_lines
 from apple_receipt_to_ynab.utils import dollars_to_milliunits, milliunits_to_dollars, now_local_iso
-from apple_receipt_to_ynab.ynab import YnabClient, build_parent_transaction
+from apple_receipt_to_ynab.ynab import YnabApiError, build_parent_transaction
 
 
 class ValidationError(ValueError):
@@ -56,19 +56,14 @@ def process_receipt(
         status = "DRY_RUN"
         message = "Dry run completed. No transaction posted."
         transaction_id = None
-        api_payload: dict[str, Any] = {}
         if not dry_run:
-            client = YnabClient(api_token=ynab_api_token)
-            try:
-                result_status, api_payload = client.create_transaction(
-                    budget_id=ynab_budget_id,
-                    transaction=transaction,
-                )
-                status = result_status
-                transaction_id = _extract_transaction_id(api_payload)
-                message = f"Posted transaction {transaction_id}."
-            finally:
-                client.close()
+            transaction_id = _post_ynab_transaction(
+                ynab_budget_id=ynab_budget_id,
+                ynab_api_token=ynab_api_token,
+                transaction=transaction,
+            )
+            status = "created"
+            message = f"Posted transaction {transaction_id}."
 
         append_log_block(
             log_path,
@@ -175,7 +170,15 @@ def _build_log_lines(
     return lines
 
 
-def _extract_transaction_id(payload: dict[str, Any]) -> str | None:
+def _extract_transaction_id(payload: object) -> str | None:
+    data = getattr(payload, "data", None)
+    transaction = getattr(data, "transaction", None)
+    value = getattr(transaction, "id", None)
+    if isinstance(value, str):
+        return value
+
+    if not isinstance(payload, dict):
+        return None
     data = payload.get("data")
     if isinstance(data, dict):
         transaction = data.get("transaction")
@@ -184,6 +187,51 @@ def _extract_transaction_id(payload: dict[str, Any]) -> str | None:
             if isinstance(value, str):
                 return value
     return None
+
+
+def _post_ynab_transaction(
+    ynab_budget_id: str,
+    ynab_api_token: str,
+    transaction: dict[str, Any],
+) -> str | None:
+    try:
+        import ynab
+    except ModuleNotFoundError as exc:
+        raise YnabApiError("The 'ynab' package is required. Install dependencies with `pip install -e .`.") from exc
+
+    subtransactions_raw = transaction.get("subtransactions")
+    subtransactions = None
+    if isinstance(subtransactions_raw, list):
+        subtransactions = [
+            ynab.SaveSubTransaction(
+                amount=int(item["amount"]),
+                payee_id=item.get("payee_id"),
+                payee_name=item.get("payee_name"),
+                category_id=item.get("category_id"),
+            )
+            for item in subtransactions_raw
+            if isinstance(item, dict)
+        ]
+
+    parent_payload = {key: value for key, value in transaction.items() if key != "subtransactions"}
+    if subtransactions is not None:
+        parent_payload["subtransactions"] = subtransactions
+    wrapper = ynab.PostTransactionsWrapper(transaction=ynab.NewTransaction(**parent_payload))
+
+    configuration = ynab.Configuration(access_token=ynab_api_token)
+    try:
+        with ynab.ApiClient(configuration) as api_client:
+            api = ynab.TransactionsApi(api_client)
+            response = api.create_transaction(ynab_budget_id, wrapper)
+    except Exception as exc:
+        api_exception = getattr(ynab, "ApiException", None)
+        if api_exception is not None and isinstance(exc, api_exception):
+            status = getattr(exc, "status", "unknown")
+            error_body = getattr(exc, "body", None) or getattr(exc, "reason", None) or str(exc)
+            raise YnabApiError(f"YNAB API {status}: {error_body}") from exc
+        raise
+
+    return _extract_transaction_id(response)
 
 
 def _resolve_ynab_flag_color(config: MappingConfig, matched: list[MatchedSubscription]) -> str | None:
