@@ -13,7 +13,6 @@ def test_build_parent_transaction_single_line_has_no_subtransactions() -> None:
         ynab_category_id="cat-1",
         ynab_payee_id=None,
         ynab_payee_name="Apple Music",
-        memo="Apple Music monthly",
         mapping_rule_id="apple_music",
     )
     tx = build_parent_transaction(
@@ -27,7 +26,7 @@ def test_build_parent_transaction_single_line_has_no_subtransactions() -> None:
     assert tx["amount"] == -11870
     assert tx["category_id"] == "cat-1"
     assert tx["payee_name"] == "Apple Music"
-    assert tx["memo"] == "Apple Music monthly"
+    assert tx["memo"] == "Apple receipt R-1"
     assert "subtransactions" not in tx
 
 
@@ -41,7 +40,6 @@ def test_build_parent_transaction_multiple_lines_uses_subtransactions() -> None:
             ynab_category_id="cat-a",
             ynab_payee_id=None,
             ynab_payee_name="Payee A",
-            memo=None,
             mapping_rule_id="a",
         ),
         SplitLine(
@@ -52,7 +50,6 @@ def test_build_parent_transaction_multiple_lines_uses_subtransactions() -> None:
             ynab_category_id="cat-b",
             ynab_payee_id=None,
             ynab_payee_name="Payee B",
-            memo=None,
             mapping_rule_id="b",
         ),
     ]
@@ -68,6 +65,8 @@ def test_build_parent_transaction_multiple_lines_uses_subtransactions() -> None:
     assert tx["category_id"] is None
     assert tx["payee_name"] == "Apple"
     assert len(tx["subtransactions"]) == 2
+    assert "memo" not in tx["subtransactions"][0]
+    assert "memo" not in tx["subtransactions"][1]
 
 
 def test_build_parent_transaction_includes_flag_color_when_set() -> None:
@@ -79,7 +78,6 @@ def test_build_parent_transaction_includes_flag_color_when_set() -> None:
         ynab_category_id="cat-u",
         ynab_payee_id=None,
         ynab_payee_name="Apple",
-        memo=None,
         mapping_rule_id="fallback",
     )
     tx = build_parent_transaction(
@@ -88,7 +86,29 @@ def test_build_parent_transaction_includes_flag_color_when_set() -> None:
         receipt_date=date(2026, 2, 16),
         split_lines=[line],
         grand_total_milliunits=1100,
-        flag_color="yellow",
+        ynab_flag_color="yellow",
     )
 
     assert tx["flag_color"] == "yellow"
+
+
+def test_build_parent_transaction_single_line_does_not_fallback_payee_name() -> None:
+    line = SplitLine(
+        source_description="Unknown",
+        base_milliunits=1000,
+        tax_milliunits=100,
+        total_milliunits=1100,
+        ynab_category_id="cat-u",
+        ynab_payee_id=None,
+        ynab_payee_name=None,  # type: ignore[arg-type]
+        mapping_rule_id="fallback",
+    )
+    tx = build_parent_transaction(
+        account_id="acct-1",
+        receipt_id="R-4",
+        receipt_date=date(2026, 2, 16),
+        split_lines=[line],
+        grand_total_milliunits=1100,
+    )
+
+    assert tx["payee_name"] is None

@@ -53,7 +53,7 @@ def process_receipt(
             receipt_date=receipt.receipt_date,
             split_lines=split_lines,
             grand_total_milliunits=grand_total_milliunits,
-            flag_color=_resolve_flag_color(config, matched),
+            ynab_flag_color=_resolve_ynab_flag_color(config, matched),
         )
         _validate_totals(receipt, split_lines, transaction["amount"])
 
@@ -77,7 +77,7 @@ def process_receipt(
                         split_lines=split_lines,
                         grand_total_milliunits=grand_total_milliunits,
                         account_id=config.defaults.ynab_account_id,
-                        flag_color=_resolve_flag_color(config, matched),
+                        ynab_flag_color=_resolve_ynab_flag_color(config, matched),
                     )
                 status = result_status
                 transaction_id = _extract_transaction_id(api_payload)
@@ -210,11 +210,11 @@ def _extract_transaction_id(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _resolve_flag_color(config: MappingConfig, matched: list[MatchedSubscription]) -> str | None:
-    if not config.fallback or not config.fallback.flag_color:
+def _resolve_ynab_flag_color(config: MappingConfig, matched: list[MatchedSubscription]) -> str | None:
+    if not config.fallback or not config.fallback.ynab_flag_color:
         return None
     if any(item.mapping_rule_id == "fallback" for item in matched):
-        return config.fallback.flag_color
+        return config.fallback.ynab_flag_color
     return None
 
 
@@ -226,7 +226,7 @@ def _retry_duplicate_with_reimport(
     split_lines: list[SplitLine],
     grand_total_milliunits: int,
     account_id: str,
-    flag_color: str | None,
+    ynab_flag_color: str | None,
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
     attempted_ids: set[str] = set()
     for _ in range(100):
@@ -238,7 +238,7 @@ def _retry_duplicate_with_reimport(
             receipt_date=receipt_date,
             split_lines=split_lines,
             grand_total_milliunits=grand_total_milliunits,
-            flag_color=flag_color,
+            ynab_flag_color=ynab_flag_color,
         )
         status, payload = client.create_transaction(
             budget_id=budget_id,

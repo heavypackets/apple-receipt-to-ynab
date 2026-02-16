@@ -33,8 +33,7 @@ def load_mapping_config(path: Path) -> MappingConfig:
     defaults_raw = _required_mapping(raw, "defaults")
     defaults = MappingDefaults(
         ynab_account_id=_required_str(defaults_raw, "ynab_account_id"),
-        default_payee_name=_optional_str(defaults_raw, "default_payee_name"),
-        fallback_category_id=_optional_str(defaults_raw, "fallback_category_id"),
+        ynab_category_id=_optional_str(defaults_raw, "ynab_category_id"),
         default_currency=_optional_str(defaults_raw, "currency") or "USD",
     )
 
@@ -48,13 +47,18 @@ def load_mapping_config(path: Path) -> MappingConfig:
     if fallback_raw is not None:
         if not isinstance(fallback_raw, dict):
             raise ConfigError("fallback must be a mapping if provided.")
+        fallback_enabled = bool(fallback_raw.get("enabled", True))
+        fallback_payee_name = (
+            _required_str(fallback_raw, "ynab_payee_name")
+            if fallback_enabled
+            else _optional_str(fallback_raw, "ynab_payee_name")
+        )
         fallback = FallbackMapping(
-            enabled=bool(fallback_raw.get("enabled", True)),
+            enabled=fallback_enabled,
             ynab_category_id=_optional_str(fallback_raw, "ynab_category_id"),
             ynab_payee_id=_optional_str(fallback_raw, "ynab_payee_id"),
-            ynab_payee_name=_optional_str(fallback_raw, "ynab_payee_name"),
-            memo_template=_optional_str(fallback_raw, "memo_template"),
-            flag_color=_optional_flag_color(fallback_raw, "flag_color"),
+            ynab_payee_name=fallback_payee_name,
+            ynab_flag_color=_optional_flag_color(fallback_raw, "ynab_flag_color"),
         )
 
     return MappingConfig(version=version, defaults=defaults, rules=rules, fallback=fallback)
@@ -74,9 +78,8 @@ def _parse_rule(raw: Any) -> MappingRule:
         enabled=bool(raw.get("enabled", True)),
         match=match,
         ynab_category_id=_required_str(raw, "ynab_category_id"),
+        ynab_payee_name=_required_str(raw, "ynab_payee_name"),
         ynab_payee_id=_optional_str(raw, "ynab_payee_id"),
-        ynab_payee_name=_optional_str(raw, "ynab_payee_name"),
-        memo_template=_optional_str(raw, "memo_template"),
     )
 
 

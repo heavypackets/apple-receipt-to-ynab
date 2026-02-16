@@ -47,7 +47,7 @@ def build_parent_transaction(
     receipt_date: date,
     split_lines: list[SplitLine],
     grand_total_milliunits: int,
-    flag_color: str | None = None,
+    ynab_flag_color: str | None = None,
 ) -> dict[str, Any]:
     if not split_lines:
         raise ValueError("Cannot build YNAB transaction without split lines.")
@@ -61,8 +61,8 @@ def build_parent_transaction(
         "approved": False,
         "import_id": import_id,
     }
-    if flag_color is not None:
-        transaction["flag_color"] = flag_color
+    if ynab_flag_color is not None:
+        transaction["flag_color"] = ynab_flag_color
 
     if len(split_lines) == 1:
         line = split_lines[0]
@@ -71,7 +71,7 @@ def build_parent_transaction(
                 "amount": sign * abs(line.total_milliunits),
                 "payee_id": line.ynab_payee_id,
                 "payee_name": line.ynab_payee_name,
-                "memo": f"Apple receipt {receipt_id}",
+                "memo": f"Receipt: {receipt_id}",
                 "category_id": line.ynab_category_id,
             }
         )
@@ -84,7 +84,6 @@ def build_parent_transaction(
         subtransactions.append(
             {
                 "amount": sub_amount,
-                "memo": "",
                 "payee_id": line.ynab_payee_id,
                 "payee_name": line.ynab_payee_name,
                 "category_id": line.ynab_category_id,
@@ -95,7 +94,7 @@ def build_parent_transaction(
         {
             "amount": sum(item["amount"] for item in subtransactions),
             "payee_name": "Apple",
-            "memo": f"Apple receipt {receipt_id}",
+            "memo": f"Receipt: {receipt_id}",
             "category_id": None,
             "subtransactions": subtransactions,
         }

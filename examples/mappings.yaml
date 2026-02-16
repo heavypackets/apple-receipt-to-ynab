@@ -1,8 +1,7 @@
 version: 1
 defaults:
   ynab_account_id: "replace-with-ynab-account-id"
-  default_payee_name: "Apple"
-  fallback_category_id: "replace-with-fallback-category-id"
+  ynab_category_id: "replace-with-fallback-category-id"
   currency: "USD"
 
 rules:
@@ -13,7 +12,6 @@ rules:
       value: "Apple Music"
     ynab_category_id: "replace-with-category-id"
     ynab_payee_name: "Apple Music"
-    memo_template: "Apple subscription: {raw_description}"
 
   - id: icloud
     enabled: true
@@ -27,4 +25,4 @@ fallback:
   enabled: true
   ynab_category_id: "replace-with-fallback-category-id"
   ynab_payee_name: "Apple"
-  flag_color: "yellow"
+  ynab_flag_color: "yellow"

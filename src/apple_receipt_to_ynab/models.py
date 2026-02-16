@@ -39,16 +39,14 @@ class MappingRule:
     enabled: bool
     match: MatchSpec
     ynab_category_id: str
+    ynab_payee_name: str
     ynab_payee_id: str | None = None
-    ynab_payee_name: str | None = None
-    memo_template: str | None = None
 
 
 @dataclass(frozen=True)
 class MappingDefaults:
     ynab_account_id: str
-    default_payee_name: str | None = None
-    fallback_category_id: str | None = None
+    ynab_category_id: str | None = None
     default_currency: str = "USD"
 
 
@@ -58,8 +56,7 @@ class FallbackMapping:
     ynab_category_id: str | None = None
     ynab_payee_id: str | None = None
     ynab_payee_name: str | None = None
-    memo_template: str | None = None
-    flag_color: str | None = None
+    ynab_flag_color: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,8 +73,7 @@ class MatchedSubscription:
     base_amount: Decimal
     ynab_category_id: str
     ynab_payee_id: str | None
-    ynab_payee_name: str | None
-    memo: str | None
+    ynab_payee_name: str
     mapping_rule_id: str
 
 
@@ -89,6 +85,5 @@ class SplitLine:
     total_milliunits: int
     ynab_category_id: str
     ynab_payee_id: str | None
-    ynab_payee_name: str | None
-    memo: str | None
+    ynab_payee_name: str
     mapping_rule_id: str

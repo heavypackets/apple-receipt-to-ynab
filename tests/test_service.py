@@ -12,16 +12,16 @@ from apple_receipt_to_ynab.models import (
     SplitLine,
     SubscriptionLine,
 )
-from apple_receipt_to_ynab.service import _generate_reimport_receipt_id, _resolve_flag_color, process_receipt
+from apple_receipt_to_ynab.service import _generate_reimport_receipt_id, _resolve_ynab_flag_color, process_receipt
 from apple_receipt_to_ynab.ynab import build_import_id
 
 
-def test_resolve_flag_color_returns_color_when_fallback_was_used() -> None:
+def test_resolve_ynab_flag_color_returns_color_when_fallback_was_used() -> None:
     config = MappingConfig(
         version=1,
         defaults=MappingDefaults(ynab_account_id="acct"),
         rules=[],
-        fallback=FallbackMapping(enabled=True, ynab_category_id="cat", flag_color="yellow"),
+        fallback=FallbackMapping(enabled=True, ynab_category_id="cat", ynab_flag_color="yellow"),
     )
     matched = [
         MatchedSubscription(
@@ -30,20 +30,19 @@ def test_resolve_flag_color_returns_color_when_fallback_was_used() -> None:
             ynab_category_id="cat",
             ynab_payee_id=None,
             ynab_payee_name="Apple",
-            memo=None,
             mapping_rule_id="fallback",
         )
     ]
 
-    assert _resolve_flag_color(config, matched) == "yellow"
+    assert _resolve_ynab_flag_color(config, matched) == "yellow"
 
 
-def test_resolve_flag_color_ignores_mapped_only_transactions() -> None:
+def test_resolve_ynab_flag_color_ignores_mapped_only_transactions() -> None:
     config = MappingConfig(
         version=1,
         defaults=MappingDefaults(ynab_account_id="acct"),
         rules=[],
-        fallback=FallbackMapping(enabled=True, ynab_category_id="cat", flag_color="yellow"),
+        fallback=FallbackMapping(enabled=True, ynab_category_id="cat", ynab_flag_color="yellow"),
     )
     matched = [
         MatchedSubscription(
@@ -52,12 +51,11 @@ def test_resolve_flag_color_ignores_mapped_only_transactions() -> None:
             ynab_category_id="cat",
             ynab_payee_id=None,
             ynab_payee_name="Apple Music",
-            memo=None,
             mapping_rule_id="apple_music",
         )
     ]
 
-    assert _resolve_flag_color(config, matched) is None
+    assert _resolve_ynab_flag_color(config, matched) is None
 
 
 def test_generate_reimport_receipt_id_uses_pound_and_two_digits(monkeypatch) -> None:
@@ -90,7 +88,6 @@ def test_process_receipt_retries_duplicate_when_reimport_enabled(tmp_path: Path,
             ynab_category_id="cat-1",
             ynab_payee_id=None,
             ynab_payee_name="Apple Music",
-            memo=None,
             mapping_rule_id="apple_music",
         )
     ]
@@ -103,7 +100,6 @@ def test_process_receipt_retries_duplicate_when_reimport_enabled(tmp_path: Path,
             ynab_category_id="cat-1",
             ynab_payee_id=None,
             ynab_payee_name="Apple Music",
-            memo=None,
             mapping_rule_id="apple_music",
         )
     ]
@@ -172,7 +168,6 @@ def test_process_receipt_duplicate_without_reimport_stays_noop(tmp_path: Path, m
             ynab_category_id="cat-1",
             ynab_payee_id=None,
             ynab_payee_name="Apple Music",
-            memo=None,
             mapping_rule_id="apple_music",
         )
     ]
@@ -185,7 +180,6 @@ def test_process_receipt_duplicate_without_reimport_stays_noop(tmp_path: Path, m
             ynab_category_id="cat-1",
             ynab_payee_id=None,
             ynab_payee_name="Apple Music",
-            memo=None,
             mapping_rule_id="apple_music",
         )
     ]

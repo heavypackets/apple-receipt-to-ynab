@@ -29,7 +29,6 @@ def build_split_lines(subscriptions: list[MatchedSubscription], tax_total: Decim
                 ynab_category_id=sub.ynab_category_id,
                 ynab_payee_id=sub.ynab_payee_id,
                 ynab_payee_name=sub.ynab_payee_name,
-                memo=sub.memo,
                 mapping_rule_id=sub.mapping_rule_id,
             )
         )

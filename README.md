@@ -28,7 +28,9 @@ cp examples/mappings.yaml ./mappings.yaml
 ```
 
 1. Edit `mappings.yaml` (or rename to `mappings.yml`) for your categories, payees, and account IDs.
-1. Optional: set `fallback.flag_color` to flag transactions that include unmapped subscriptions resolved by fallback.
+1. Every `rules[]` entry must include a valid `ynab_payee_name`.
+1. If `fallback.enabled` is `true` (or omitted), `fallback.ynab_payee_name` is required.
+1. Optional: set `fallback.ynab_flag_color` to flag transactions that include unmapped subscriptions resolved by fallback.
 1. Provide `ynab_account_id`, category IDs, and payees.
 1. Set environment variables:
 
@@ -109,8 +111,10 @@ apple-receipt-to-ynab /path/to/apple_receipt.eml \
 ## Notes
 
 - A single subscription receipt produces a non-split YNAB transaction.
+- Single-subscription transaction `payee_name` is always taken from mapping and does not fallback to `Apple`.
 - A multi-subscription receipt produces a split YNAB transaction.
-- If fallback is used for any subscription and `fallback.flag_color` is set, the YNAB transaction is flagged (valid colors: `red`, `orange`, `yellow`, `green`, `blue`, `purple`).
+- For multi-subscription receipts, only the parent transaction has a memo (`Apple receipt <receipt_id>`).
+- If fallback is used for any subscription and `fallback.ynab_flag_color` is set, the YNAB transaction is flagged (valid colors: `red`, `orange`, `yellow`, `green`, `blue`, `purple`).
 - `--reimport` allows reposting a duplicate receipt by retrying with randomized `receipt_id#NN` variants to generate a new `import_id` after a YNAB 409 duplicate response.
 - The parser reads MIME parts directly and parses the HTML receipt body (supports both `subscription-lockup__container` and `item-cell`/`price-cell` Apple receipt templates) after quoted-printable decoding.
 - This parser uses heuristics and template-aware rules; if Apple changes email markup, update `src/apple_receipt_to_ynab/parser.py`.

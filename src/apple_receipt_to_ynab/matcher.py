@@ -22,20 +22,20 @@ def match_subscriptions(
         rule = _find_rule(clean_text(sub.description), config)
         if rule is None:
             if config.fallback and config.fallback.enabled:
-                category_id = config.fallback.ynab_category_id or config.defaults.fallback_category_id
+                category_id = config.fallback.ynab_category_id or config.defaults.ynab_category_id
                 if not category_id:
                     raise MappingMatchError(
-                        "Fallback configured without ynab_category_id and no defaults.fallback_category_id."
+                        "Fallback configured without ynab_category_id and no defaults.ynab_category_id."
                     )
+                if not config.fallback.ynab_payee_name:
+                    raise MappingMatchError("Fallback configured without ynab_payee_name.")
                 matched.append(
                     MatchedSubscription(
                         source_description=sub.description,
                         base_amount=sub.base_amount,
                         ynab_category_id=category_id,
                         ynab_payee_id=config.fallback.ynab_payee_id,
-                        ynab_payee_name=config.fallback.ynab_payee_name
-                        or config.defaults.default_payee_name,
-                        memo=_render_memo(config.fallback.memo_template, sub.description),
+                        ynab_payee_name=config.fallback.ynab_payee_name,
                         mapping_rule_id="fallback",
                     )
                 )
@@ -49,8 +49,7 @@ def match_subscriptions(
                 base_amount=sub.base_amount,
                 ynab_category_id=rule.ynab_category_id,
                 ynab_payee_id=rule.ynab_payee_id,
-                ynab_payee_name=rule.ynab_payee_name or config.defaults.default_payee_name,
-                memo=_render_memo(rule.memo_template, sub.description),
+                ynab_payee_name=rule.ynab_payee_name,
                 mapping_rule_id=rule.id,
             )
         )
@@ -76,9 +75,3 @@ def _find_rule(description: str, config: MappingConfig):
             if match_type == "regex" and re.search(pattern, normalized):
                 return rule
     return None
-
-
-def _render_memo(template: str | None, raw_description: str) -> str | None:
-    if template is None:
-        return None
-    return template.format(raw_description=raw_description)
