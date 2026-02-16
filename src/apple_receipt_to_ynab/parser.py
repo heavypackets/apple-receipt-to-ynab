@@ -13,6 +13,7 @@ from apple_receipt_to_ynab.models import ParsedReceipt, SubscriptionLine
 from apple_receipt_to_ynab.utils import clean_text
 
 AMOUNT_PATTERN = re.compile(r"(?P<amount>[-+]?\$?\d{1,3}(?:,\d{3})*(?:\.\d{2})|[-+]?\$?\d+\.\d{2})")
+AMOUNT_REGEX_TEXT = r"[-+]?\$?\d{1,3}(?:,\d{3})*(?:\.\d{2})|[-+]?\$?\d+\.\d{2}"
 CURRENCY_AMOUNT_PATTERN = re.compile(r"\$\s?\d{1,3}(?:,\d{3})*(?:\.\d{2})")
 RECEIPT_ID_PATTERN = re.compile(
     r"(?:Order\s*ID|Document\s*(?:No|Number)|Receipt\s*ID|Invoice\s*ID)\s*[:#]?\s*([A-Z0-9\-]+)",
@@ -76,8 +77,14 @@ PAYMENT_INFORMATION_SECTION_PATTERN = re.compile(
     r"<div[^>]*class=\"[^\"]*payment-information[^\"]*\"[^>]*>.*?(?=<div\s+id=\"footer_section\")",
     re.IGNORECASE | re.DOTALL,
 )
+ITEM_ROW_PATTERN = re.compile(r"<tr\b[^>]*>(?P<row>.*?)</tr>", re.IGNORECASE | re.DOTALL)
 RECEIPT_ID_LABEL_PATTERN = re.compile(
     r"^(order\s*id|receipt\s*id|invoice\s*id|document\s*(?:no|number)|document)\s*:?$",
+    re.IGNORECASE,
+)
+ORDER_ID_BLOB_PATTERN = re.compile(r"\border\s*id\b\s*[:#]?\s*([A-Z0-9\-]+)", re.IGNORECASE)
+DATE_LABEL_BLOB_PATTERN = re.compile(
+    r"\bdate\b\s*[:#]?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})",
     re.IGNORECASE,
 )
 
@@ -166,15 +173,19 @@ def parse_receipt_text(
 
 def _parse_receipt_from_html(html: str, source_path: Path, default_currency: str) -> ParsedReceipt:
     body_html = _strip_style_and_script(html)
+    body_text = _html_to_plain_text(body_html)
     html_lines = _build_metadata_lines_from_html(body_html)
-    receipt_id = _extract_receipt_id(html_lines, source_path)
-    receipt_date = _extract_date(html_lines)
+    receipt_id = _extract_receipt_id_from_text_blob(body_text) or _extract_receipt_id(
+        html_lines, source_path
+    )
+    labeled_date = _extract_labeled_date_from_text_blob(body_text)
+    receipt_date = labeled_date or _extract_date(html_lines)
 
     subscriptions = _extract_subscriptions_from_html(body_html)
     if not subscriptions:
-        raise ReceiptParseError(
-            "Could not find subscription tables (class subscription-lockup__container) in the EML HTML body."
-        )
+        subscriptions = _extract_subscriptions_from_item_rows(body_html)
+    if not subscriptions:
+        raise ReceiptParseError("Could not find subscription/item rows in the EML HTML body.")
 
     tax_total, grand_total = _extract_payment_totals_from_html(body_html)
     if tax_total is None:
@@ -259,21 +270,48 @@ def _extract_subscriptions_from_html(body_html: str) -> list[SubscriptionLine]:
     return subscriptions
 
 
+def _extract_subscriptions_from_item_rows(body_html: str) -> list[SubscriptionLine]:
+    subscriptions: list[SubscriptionLine] = []
+    for row_html in (match.group("row") for match in ITEM_ROW_PATTERN.finditer(body_html)):
+        if "class=\"item-cell\"" not in row_html:
+            continue
+        if "aapl-mobile-cell" in row_html:
+            continue
+        if "class=\"price-cell\"" not in row_html:
+            continue
+
+        row_lines = _extract_text_lines(row_html)
+        if not row_lines:
+            continue
+        row_lines = [line for line in row_lines if line.lower() != "report a problem"]
+
+        amount = _extract_amount_from_tokens(row_lines)
+        if amount is None:
+            continue
+
+        description_tokens = [token for token in row_lines if _extract_last_amount(token) is None]
+        description = _compose_subscription_description(description_tokens)
+        if not description:
+            continue
+
+        subscriptions.append(SubscriptionLine(description=description, base_amount=amount))
+
+    return subscriptions
+
+
 def _extract_payment_totals_from_html(body_html: str) -> tuple[Decimal | None, Decimal | None]:
     section_match = PAYMENT_INFORMATION_SECTION_PATTERN.search(body_html)
-    if section_match is None:
-        return None, None
-
-    section_tokens = _extract_p_text_tokens(section_match.group(0))
+    section_tokens: list[str] = []
+    if section_match is not None:
+        section_tokens = _extract_p_text_tokens(section_match.group(0))
+        if not section_tokens:
+            section_tokens = _extract_text_lines(section_match.group(0))
     if not section_tokens:
-        return None, None
+        section_tokens = _extract_text_lines(body_html)
 
     tax_total = _find_amount_after_label(section_tokens, labels={"tax"})
     subtotal = _find_amount_after_label(section_tokens, labels={"subtotal"})
-    grand_total = _find_amount_after_label(
-        section_tokens,
-        labels={"total", "order total", "amount charged", "charged"},
-    )
+    grand_total = _find_amount_after_label(section_tokens, labels={"total", "order total", "amount charged", "charged"})
 
     if grand_total is None:
         currency_amounts = [_extract_last_amount(token) for token in section_tokens]
@@ -298,6 +336,11 @@ def _extract_p_text_tokens(fragment_html: str) -> list[str]:
     return tokens
 
 
+def _extract_text_lines(fragment_html: str) -> list[str]:
+    text = _html_to_plain_text(fragment_html)
+    return [clean_text(line) for line in text.splitlines() if clean_text(line)]
+
+
 def _compose_subscription_description(tokens: list[str]) -> str | None:
     if not tokens:
         return None
@@ -306,6 +349,8 @@ def _compose_subscription_description(tokens: list[str]) -> str | None:
     plan_name = None
     for token in tokens[1:]:
         if _is_subscription_metadata_noise(token):
+            continue
+        if not _looks_like_subscription_plan(token):
             continue
         plan_name = token
         break
@@ -324,6 +369,22 @@ def _is_subscription_metadata_noise(value: str) -> bool:
     return False
 
 
+def _looks_like_subscription_plan(value: str) -> bool:
+    lowered = value.strip().lower()
+    if "(" in lowered and ")" in lowered:
+        return True
+    keywords = (
+        "monthly",
+        "yearly",
+        "annual",
+        "weekly",
+        "daily",
+        "subscription",
+        "renews",
+    )
+    return any(keyword in lowered for keyword in keywords)
+
+
 def _extract_amount_from_tokens(tokens: list[str]) -> Decimal | None:
     for token in reversed(tokens):
         amount = _extract_last_amount(token)
@@ -336,6 +397,9 @@ def _find_amount_after_label(tokens: list[str], labels: set[str]) -> Decimal | N
     normalized_labels = {label.strip().lower() for label in labels}
     for idx, token in enumerate(tokens):
         lowered = token.strip().lower().rstrip(":")
+        line_amount = _extract_labeled_amount_from_line(token, normalized_labels)
+        if line_amount is not None:
+            return line_amount
         if lowered not in normalized_labels:
             continue
         for candidate in tokens[idx + 1 :]:
@@ -345,6 +409,32 @@ def _find_amount_after_label(tokens: list[str], labels: set[str]) -> Decimal | N
             if candidate.strip().endswith(":"):
                 break
     return None
+
+
+def _extract_labeled_amount_from_line(line: str, labels: set[str]) -> Decimal | None:
+    for label in labels:
+        pattern = re.compile(rf"\b{re.escape(label)}\b[^\d$-+]*({AMOUNT_REGEX_TEXT})", re.IGNORECASE)
+        match = pattern.search(line)
+        if not match:
+            continue
+        amount = _parse_amount(match.group(1))
+        if amount is not None:
+            return amount
+    return None
+
+
+def _extract_receipt_id_from_text_blob(text: str) -> str | None:
+    match = ORDER_ID_BLOB_PATTERN.search(text)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def _extract_labeled_date_from_text_blob(text: str) -> date | None:
+    match = DATE_LABEL_BLOB_PATTERN.search(text)
+    if not match:
+        return None
+    return _parse_date(match.group(1).strip())
 
 
 def _strip_style_and_script(html: str) -> str:

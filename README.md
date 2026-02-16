@@ -108,6 +108,6 @@ apple-receipt-to-ynab /path/to/apple_receipt.eml \
 
 - Parent YNAB transaction amount is the sum of split line amounts.
 - Split lines include per-line payee and category.
-- For `.eml` imports, the parser reads MIME parts directly and parses the HTML receipt body (including `subscription-lockup__container` tables) after quoted-printable decoding.
+- For `.eml` imports, the parser reads MIME parts directly and parses the HTML receipt body (supports both `subscription-lockup__container` and `item-cell`/`price-cell` Apple receipt templates) after quoted-printable decoding.
 - If you print emails to PDF, the parser strips common wrapper noise (for example `From:`, `Subject:`, `Page X of Y`, and trailing print footer text), but native `.eml` is more reliable.
 - This parser uses heuristics and template-aware rules; if Apple changes email markup, update `src/apple_receipt_to_ynab/parser.py`.
