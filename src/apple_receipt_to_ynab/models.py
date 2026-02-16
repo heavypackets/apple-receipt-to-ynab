@@ -59,6 +59,7 @@ class FallbackMapping:
     ynab_payee_id: str | None = None
     ynab_payee_name: str | None = None
     memo_template: str | None = None
+    flag_color: str | None = None
 
 
 @dataclass(frozen=True)

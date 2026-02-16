@@ -1,14 +1,14 @@
 # apple-receipt-to-ynab
 
-Local CLI tool that parses Apple App Store subscription receipt emails (`.eml`), maps each subscription line to YNAB category/payee rules in YAML, proportionally allocates receipt tax across lines, and creates one split transaction in YNAB.
+Local CLI tool that parses Apple App Store subscription receipt emails (`.eml`), maps each subscription line to YNAB category/payee rules in YAML, proportionally allocates receipt tax across lines, and creates one YNAB transaction (single-line or split).
 
 ## What it does
 
-- Reads a local receipt file (`.eml` preferred, `.pdf` also supported).
+- Reads a local receipt email file (`.eml`).
 - Extracts subscription lines, tax total, and grand total.
 - Matches each subscription with `mappings.yaml` or `mappings.yml` in the working directory by default (or a path passed with `--config`).
 - Splits tax proportionally across subscription lines using largest-remainder reconciliation.
-- Creates one parent transaction with split subtransactions in YNAB.
+- Creates one regular transaction when there is one subscription, or one split transaction when there are multiple subscriptions.
 - Appends a plain text log entry for each run.
 
 ## Install
@@ -28,6 +28,7 @@ cp examples/mappings.yaml ./mappings.yaml
 ```
 
 1. Edit `mappings.yaml` (or rename to `mappings.yml`) for your categories, payees, and account IDs.
+1. Optional: set `fallback.flag_color` to flag transactions that include unmapped subscriptions resolved by fallback.
 1. Provide `ynab_account_id`, category IDs, and payees.
 1. Set environment variables:
 
@@ -101,13 +102,15 @@ Optional overrides:
 ```bash
 apple-receipt-to-ynab /path/to/apple_receipt.eml \
   --config /path/to/custom-mappings.yaml \
-  --log logs/apple_receipt_to_ynab.log
+  --log logs/apple_receipt_to_ynab.log \
+  --reimport
 ```
 
 ## Notes
 
-- Parent YNAB transaction amount is the sum of split line amounts.
-- Split lines include per-line payee and category.
-- For `.eml` imports, the parser reads MIME parts directly and parses the HTML receipt body (supports both `subscription-lockup__container` and `item-cell`/`price-cell` Apple receipt templates) after quoted-printable decoding.
-- If you print emails to PDF, the parser strips common wrapper noise (for example `From:`, `Subject:`, `Page X of Y`, and trailing print footer text), but native `.eml` is more reliable.
+- A single subscription receipt produces a non-split YNAB transaction.
+- A multi-subscription receipt produces a split YNAB transaction.
+- If fallback is used for any subscription and `fallback.flag_color` is set, the YNAB transaction is flagged (valid colors: `red`, `orange`, `yellow`, `green`, `blue`, `purple`).
+- `--reimport` allows reposting a duplicate receipt by retrying with randomized `receipt_id#NN` variants to generate a new `import_id` after a YNAB 409 duplicate response.
+- The parser reads MIME parts directly and parses the HTML receipt body (supports both `subscription-lockup__container` and `item-cell`/`price-cell` Apple receipt templates) after quoted-printable decoding.
 - This parser uses heuristics and template-aware rules; if Apple changes email markup, update `src/apple_receipt_to_ynab/parser.py`.

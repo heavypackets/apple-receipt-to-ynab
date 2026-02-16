@@ -14,6 +14,7 @@ from apple_receipt_to_ynab.models import (
 )
 
 ALLOWED_MATCH_TYPES = {"exact", "contains", "regex"}
+ALLOWED_FLAG_COLORS = {"red", "orange", "yellow", "green", "blue", "purple"}
 
 
 class ConfigError(ValueError):
@@ -53,6 +54,7 @@ def load_mapping_config(path: Path) -> MappingConfig:
             ynab_payee_id=_optional_str(fallback_raw, "ynab_payee_id"),
             ynab_payee_name=_optional_str(fallback_raw, "ynab_payee_name"),
             memo_template=_optional_str(fallback_raw, "memo_template"),
+            flag_color=_optional_flag_color(fallback_raw, "flag_color"),
         )
 
     return MappingConfig(version=version, defaults=defaults, rules=rules, fallback=fallback)
@@ -106,3 +108,14 @@ def _required_int(raw: dict[str, Any], key: str) -> int:
     if not isinstance(value, int):
         raise ConfigError(f"'{key}' must be an integer.")
     return value
+
+
+def _optional_flag_color(raw: dict[str, Any], key: str) -> str | None:
+    value = _optional_str(raw, key)
+    if value is None:
+        return None
+    normalized = value.lower()
+    if normalized not in ALLOWED_FLAG_COLORS:
+        allowed = ", ".join(sorted(ALLOWED_FLAG_COLORS))
+        raise ConfigError(f"'{key}' must be one of: {allowed}.")
+    return normalized

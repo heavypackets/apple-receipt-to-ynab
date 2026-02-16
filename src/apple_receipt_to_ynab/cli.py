@@ -8,6 +8,7 @@ from apple_receipt_to_ynab.config import ConfigError
 from apple_receipt_to_ynab.credentials import resolve_secret
 from apple_receipt_to_ynab.dotenv import load_dotenv
 from apple_receipt_to_ynab.matcher import MappingMatchError
+from apple_receipt_to_ynab.models import SubscriptionLine
 from apple_receipt_to_ynab.parser import ReceiptParseError
 from apple_receipt_to_ynab.paths import resolve_mapping_config_path
 from apple_receipt_to_ynab.service import ValidationError, process_receipt
@@ -47,10 +48,14 @@ def main() -> int:
             ynab_budget_id=budget_id,
             ynab_api_token=api_token,
             dry_run=args.dry_run,
+            reimport=args.reimport,
         )
     except (ConfigError, ReceiptParseError, MappingMatchError, TaxAllocationError, ValidationError, YnabApiError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
+
+    if args.dry_run:
+        _print_dry_run_subscriptions(result.parsed_subscriptions)
 
     print(
         f"{result.status}: receipt={result.receipt_id} import_id={result.import_id} "
@@ -62,9 +67,9 @@ def main() -> int:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="apple-receipt-to-ynab",
-        description="Parse Apple subscription receipt files (.eml preferred, .pdf supported) and write YNAB split transactions.",
+        description="Parse Apple subscription receipt email files (.eml) and write YNAB transactions.",
     )
-    parser.add_argument("receipt_path", type=Path, help="Path to local Apple receipt file (.eml or .pdf).")
+    parser.add_argument("receipt_path", type=Path, help="Path to local Apple receipt email file (.eml).")
     parser.add_argument(
         "--config",
         type=Path,
@@ -80,7 +85,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ynab-api-token", type=str, default=None, help="YNAB API token. Optional if YNAB_API_TOKEN is set.")
     parser.add_argument("--ynab-budget-id", type=str, default=None, help="YNAB budget id. Optional if YNAB_BUDGET_ID is set.")
     parser.add_argument("--dry-run", action="store_true", help="Parse and compute splits, but do not call YNAB API.")
+    parser.add_argument(
+        "--reimport",
+        action="store_true",
+        help="If YNAB returns duplicate import_id (409), retry with randomized receipt_id#NN suffix values to force a new import_id.",
+    )
     return parser
+
+
+def _print_dry_run_subscriptions(subscriptions: tuple[SubscriptionLine, ...]) -> None:
+    print("Parsed subscriptions:")
+    for idx, item in enumerate(subscriptions, start=1):
+        print(f"{idx}. {item.description} | {item.base_amount:.2f}")
 
 
 if __name__ == "__main__":

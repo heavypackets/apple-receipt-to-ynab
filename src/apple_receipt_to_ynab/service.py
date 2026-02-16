@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from datetime import date
 from pathlib import Path
+import random
 from typing import Any
 
 from apple_receipt_to_ynab.config import load_mapping_config
 from apple_receipt_to_ynab.logger import append_log_block
 from apple_receipt_to_ynab.matcher import match_subscriptions
-from apple_receipt_to_ynab.models import ParsedReceipt, SplitLine
+from apple_receipt_to_ynab.models import MappingConfig, MatchedSubscription, ParsedReceipt, SplitLine, SubscriptionLine
+from apple_receipt_to_ynab.parser import parse_receipt_file
 from apple_receipt_to_ynab.tax import build_split_lines
 from apple_receipt_to_ynab.utils import dollars_to_milliunits, milliunits_to_dollars, now_local_iso
 from apple_receipt_to_ynab.ynab import YnabClient, build_parent_transaction
@@ -25,6 +27,7 @@ class ProcessResult:
     receipt_id: str
     import_id: str
     parent_amount_milliunits: int
+    parsed_subscriptions: tuple[SubscriptionLine, ...]
     transaction_id: str | None = None
 
 
@@ -35,12 +38,11 @@ def process_receipt(
     ynab_budget_id: str,
     ynab_api_token: str,
     dry_run: bool,
+    reimport: bool = False,
 ) -> ProcessResult:
     try:
         config = load_mapping_config(config_path)
-        receipt = _parse_receipt_with_best_available_parser(
-            receipt_path, default_currency=config.defaults.default_currency
-        )
+        receipt = parse_receipt_file(receipt_path, default_currency=config.defaults.default_currency)
         matched = match_subscriptions(receipt.subscriptions, config)
         split_lines = build_split_lines(matched, receipt.tax_total)
         grand_total_milliunits = dollars_to_milliunits(receipt.grand_total)
@@ -51,6 +53,7 @@ def process_receipt(
             receipt_date=receipt.receipt_date,
             split_lines=split_lines,
             grand_total_milliunits=grand_total_milliunits,
+            flag_color=_resolve_flag_color(config, matched),
         )
         _validate_totals(receipt, split_lines, transaction["amount"])
 
@@ -65,6 +68,17 @@ def process_receipt(
                     budget_id=ynab_budget_id,
                     transaction=transaction,
                 )
+                if result_status == "duplicate-noop" and reimport:
+                    transaction, result_status, api_payload = _retry_duplicate_with_reimport(
+                        client=client,
+                        budget_id=ynab_budget_id,
+                        base_receipt_id=receipt.receipt_id,
+                        receipt_date=receipt.receipt_date,
+                        split_lines=split_lines,
+                        grand_total_milliunits=grand_total_milliunits,
+                        account_id=config.defaults.ynab_account_id,
+                        flag_color=_resolve_flag_color(config, matched),
+                    )
                 status = result_status
                 transaction_id = _extract_transaction_id(api_payload)
                 message = (
@@ -95,6 +109,7 @@ def process_receipt(
             receipt_id=receipt.receipt_id,
             import_id=transaction["import_id"],
             parent_amount_milliunits=transaction["amount"],
+            parsed_subscriptions=tuple(receipt.subscriptions),
             transaction_id=transaction_id,
         )
     except Exception as exc:
@@ -195,21 +210,51 @@ def _extract_transaction_id(payload: dict[str, Any]) -> str | None:
     return None
 
 
-def _parse_receipt_with_best_available_parser(receipt_path: Path, default_currency: str) -> ParsedReceipt:
-    # Import lazily to avoid hard failures when a user's venv has a stale parser module installed.
-    from apple_receipt_to_ynab import parser as parser_module
+def _resolve_flag_color(config: MappingConfig, matched: list[MatchedSubscription]) -> str | None:
+    if not config.fallback or not config.fallback.flag_color:
+        return None
+    if any(item.mapping_rule_id == "fallback" for item in matched):
+        return config.fallback.flag_color
+    return None
 
-    parse_receipt_file = getattr(parser_module, "parse_receipt_file", None)
-    if callable(parse_receipt_file):
-        return parse_receipt_file(receipt_path, default_currency=default_currency)
 
-    parse_receipt_pdf = getattr(parser_module, "parse_receipt_pdf", None)
-    if callable(parse_receipt_pdf):
-        if receipt_path.suffix.lower() == ".eml":
-            raise ValidationError(
-                "This installed parser does not support .eml yet. "
-                "Reinstall the app from the latest source and rerun."
-            )
-        return parse_receipt_pdf(receipt_path, default_currency=default_currency)
+def _retry_duplicate_with_reimport(
+    client: YnabClient,
+    budget_id: str,
+    base_receipt_id: str,
+    receipt_date: date,
+    split_lines: list[SplitLine],
+    grand_total_milliunits: int,
+    account_id: str,
+    flag_color: str | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    attempted_ids: set[str] = set()
+    for _ in range(100):
+        retry_receipt_id = _generate_reimport_receipt_id(base_receipt_id, attempted_ids)
+        attempted_ids.add(retry_receipt_id)
+        retry_transaction = build_parent_transaction(
+            account_id=account_id,
+            receipt_id=retry_receipt_id,
+            receipt_date=receipt_date,
+            split_lines=split_lines,
+            grand_total_milliunits=grand_total_milliunits,
+            flag_color=flag_color,
+        )
+        status, payload = client.create_transaction(
+            budget_id=budget_id,
+            transaction=retry_transaction,
+        )
+        if status != "duplicate-noop":
+            return retry_transaction, status, payload
+    raise ValidationError(
+        "Reimport was requested but no unique import_id could be posted after 100 attempts."
+    )
 
-    raise ValidationError("No compatible parser entry point found in apple_receipt_to_ynab.parser.")
+
+def _generate_reimport_receipt_id(base_receipt_id: str, attempted_ids: set[str]) -> str:
+    for _ in range(100):
+        suffix = random.randint(0, 99)
+        candidate = f"{base_receipt_id}#{suffix:02d}"
+        if candidate not in attempted_ids:
+            return candidate
+    raise ValidationError("Unable to generate a unique reimport receipt id.")

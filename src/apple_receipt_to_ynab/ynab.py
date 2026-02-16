@@ -47,11 +47,36 @@ def build_parent_transaction(
     receipt_date: date,
     split_lines: list[SplitLine],
     grand_total_milliunits: int,
+    flag_color: str | None = None,
 ) -> dict[str, Any]:
     if not split_lines:
         raise ValueError("Cannot build YNAB transaction without split lines.")
 
     sign = -1 if grand_total_milliunits >= 0 else 1
+    import_id = build_import_id(receipt_id=receipt_id, receipt_date=receipt_date, grand_total_milliunits=grand_total_milliunits)
+    transaction: dict[str, Any] = {
+        "account_id": account_id,
+        "date": receipt_date.isoformat(),
+        "cleared": "cleared",
+        "approved": False,
+        "import_id": import_id,
+    }
+    if flag_color is not None:
+        transaction["flag_color"] = flag_color
+
+    if len(split_lines) == 1:
+        line = split_lines[0]
+        transaction.update(
+            {
+                "amount": sign * abs(line.total_milliunits),
+                "payee_id": line.ynab_payee_id,
+                "payee_name": line.ynab_payee_name,
+                "memo": f"Apple receipt {receipt_id}",
+                "category_id": line.ynab_category_id,
+            }
+        )
+        return transaction
+
     subtransactions = []
     for line in split_lines:
         line_total = abs(line.total_milliunits)
@@ -59,28 +84,22 @@ def build_parent_transaction(
         subtransactions.append(
             {
                 "amount": sub_amount,
-                "memo": line.memo or line.ynab_payee_name or line.source_description,
+                "memo": "",
                 "payee_id": line.ynab_payee_id,
                 "payee_name": line.ynab_payee_name,
                 "category_id": line.ynab_category_id,
             }
         )
 
-    parent_amount = sum(item["amount"] for item in subtransactions)
-    import_id = build_import_id(receipt_id=receipt_id, receipt_date=receipt_date, grand_total_milliunits=grand_total_milliunits)
-
-    transaction = {
-        "account_id": account_id,
-        "date": receipt_date.isoformat(),
-        "amount": parent_amount,
-        "payee_name": "Apple",
-        "memo": f"Apple receipt {receipt_id}",
-        "category_id": None,
-        "cleared": "cleared",
-        "approved": False,
-        "import_id": import_id,
-        "subtransactions": subtransactions,
-    }
+    transaction.update(
+        {
+            "amount": sum(item["amount"] for item in subtransactions),
+            "payee_name": "Apple",
+            "memo": f"Apple receipt {receipt_id}",
+            "category_id": None,
+            "subtransactions": subtransactions,
+        }
+    )
     return transaction
 
 

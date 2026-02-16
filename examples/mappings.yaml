@@ -27,3 +27,4 @@ fallback:
   enabled: true
   ynab_category_id: "replace-with-fallback-category-id"
   ynab_payee_name: "Apple"
+  flag_color: "yellow"

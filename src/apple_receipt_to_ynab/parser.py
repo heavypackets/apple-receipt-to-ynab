@@ -51,7 +51,7 @@ TAX_LINE_PATTERNS = (
 DATE_CANDIDATE_PATTERN = re.compile(
     r"\b(\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}|[A-Za-z]{3,9}\s+\d{1,2},\s+\d{4})\b"
 )
-DEFAULT_RECEIPT_PREFIX = "PDF-RECEIPT"
+DEFAULT_RECEIPT_PREFIX = "RECEIPT"
 LEADING_EMAIL_NOISE_PATTERNS = (
     re.compile(r"^(from|to|subject|sent|date|cc|bcc)\s*:", re.IGNORECASE),
     re.compile(r"^on .+ wrote:$", re.IGNORECASE),
@@ -94,14 +94,11 @@ class ReceiptParseError(ValueError):
 
 
 def parse_receipt_file(path: Path, default_currency: str = "USD") -> ParsedReceipt:
-    suffix = path.suffix.lower()
-    if suffix == ".eml":
-        return parse_receipt_eml(path, default_currency=default_currency)
-    if suffix == ".pdf":
-        return parse_receipt_pdf(path, default_currency=default_currency)
-    raise ReceiptParseError(
-        f"Unsupported receipt file extension '{suffix}'. Use a .eml (preferred) or .pdf file."
-    )
+    if path.suffix.lower() != ".eml":
+        raise ReceiptParseError(
+            f"Unsupported receipt file extension '{path.suffix.lower()}'. Use a .eml file."
+        )
+    return parse_receipt_eml(path, default_currency=default_currency)
 
 
 def parse_receipt_eml(path: Path, default_currency: str = "USD") -> ParsedReceipt:
@@ -122,14 +119,6 @@ def parse_receipt_eml(path: Path, default_currency: str = "USD") -> ParsedReceip
     raise ReceiptParseError("EML did not contain a readable text/html or text/plain body.")
 
 
-def parse_receipt_pdf(path: Path, default_currency: str = "USD") -> ParsedReceipt:
-    if not path.exists():
-        raise ReceiptParseError(f"PDF not found: {path}")
-
-    text = _extract_pdf_text(path)
-    return parse_receipt_text(text=text, source_name=path, default_currency=default_currency)
-
-
 def parse_receipt_text(
     text: str,
     source_name: Path | str = "TEXT-RECEIPT",
@@ -138,7 +127,7 @@ def parse_receipt_text(
     source_path = source_name if isinstance(source_name, Path) else Path(str(source_name))
     lines = [clean_text(line) for line in text.splitlines() if clean_text(line)]
     if not lines:
-        raise ReceiptParseError("PDF text extraction produced no usable lines.")
+        raise ReceiptParseError("Receipt text extraction produced no usable lines.")
     lines = _strip_leading_email_noise(lines)
     lines = _focus_receipt_section(lines)
 
@@ -217,21 +206,6 @@ def _extract_message_part(message: Message, content_type: str) -> str | None:
         charset = part.get_content_charset() or "utf-8"
         return raw.decode(charset, errors="replace")
     return None
-
-
-def _extract_pdf_text(path: Path) -> str:
-    try:
-        from pypdf import PdfReader
-    except ModuleNotFoundError as exc:
-        raise ReceiptParseError(
-            "pypdf is required for PDF parsing. Install dependencies with `pip install -e .`."
-        ) from exc
-
-    reader = PdfReader(str(path))
-    pages_text = []
-    for page in reader.pages:
-        pages_text.append(page.extract_text() or "")
-    return "\n".join(pages_text)
 
 
 def _build_metadata_lines_from_html(body_html: str) -> list[str]:
