@@ -58,20 +58,14 @@ def process_receipt(
         message = "Dry run completed. No transaction posted."
         transaction_id = None
         if not dry_run:
-            client = YnabClient(
-                api_token=runtime_config.ynab.api_token,
-                base_url=runtime_config.ynab.api_url,
+            transaction_id = _post_ynab_transaction(
+                ynab_budget_id=runtime_config.ynab.budget_id,
+                ynab_api_token=runtime_config.ynab.api_token,
+                ynab_api_url=runtime_config.ynab.api_url,
+                transaction=transaction,
             )
-            try:
-                result_status, api_payload = client.create_transaction(
-                    budget_id=runtime_config.ynab.budget_id,
-                    transaction=transaction,
-                )
-                status = result_status
-                transaction_id = _extract_transaction_id(api_payload)
-                message = f"Posted transaction {transaction_id}."
-            finally:
-                client.close()
+            status = "created"
+            message = f"Posted transaction {transaction_id}."
 
         append_log_block(
             log_path,
@@ -204,6 +198,7 @@ def _extract_transaction_id(payload: object) -> str | None:
 def _post_ynab_transaction(
     ynab_budget_id: str,
     ynab_api_token: str,
+    ynab_api_url: str,
     transaction: dict[str, Any],
 ) -> str | None:
     try:
@@ -231,6 +226,7 @@ def _post_ynab_transaction(
     wrapper = ynab.PostTransactionsWrapper(transaction=ynab.NewTransaction(**parent_payload))
 
     configuration = ynab.Configuration(access_token=ynab_api_token)
+    configuration.host = ynab_api_url.rstrip("/")
     try:
         with ynab.ApiClient(configuration) as api_client:
             api = ynab.TransactionsApi(api_client)
