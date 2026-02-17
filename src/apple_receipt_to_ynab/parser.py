@@ -105,16 +105,27 @@ def parse_receipt_eml(path: Path, default_currency: str = "USD") -> ParsedReceip
     if not path.exists():
         raise ReceiptParseError(f"EML not found: {path}")
 
-    with path.open("rb") as handle:
-        message = BytesParser(policy=policy.default).parse(handle)
+    return parse_receipt_bytes(path.read_bytes(), source_name=path, default_currency=default_currency)
 
+
+def parse_receipt_bytes(
+    raw_bytes: bytes,
+    source_name: Path | str = "GMAIL-RECEIPT.eml",
+    default_currency: str = "USD",
+) -> ParsedReceipt:
+    source_path = source_name if isinstance(source_name, Path) else Path(str(source_name))
+    message = BytesParser(policy=policy.default).parsebytes(raw_bytes)
+    return _parse_receipt_message(message, source_path=source_path, default_currency=default_currency)
+
+
+def _parse_receipt_message(message: Message, source_path: Path, default_currency: str) -> ParsedReceipt:
     html = _extract_message_part(message, "text/html")
     if html:
-        return _parse_receipt_from_html(html=html, source_path=path, default_currency=default_currency)
+        return _parse_receipt_from_html(html=html, source_path=source_path, default_currency=default_currency)
 
     plain_text = _extract_message_part(message, "text/plain")
     if plain_text:
-        return parse_receipt_text(text=plain_text, source_name=path, default_currency=default_currency)
+        return parse_receipt_text(text=plain_text, source_name=source_path, default_currency=default_currency)
 
     raise ReceiptParseError("EML did not contain a readable text/html or text/plain body.")
 

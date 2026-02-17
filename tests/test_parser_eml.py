@@ -3,7 +3,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from decimal import Decimal
 
-from apple_receipt_to_ynab.parser import parse_receipt_eml, parse_receipt_file
+from apple_receipt_to_ynab.parser import parse_receipt_bytes, parse_receipt_eml, parse_receipt_file
 
 
 def test_parse_receipt_eml_extracts_subscription_tables_and_totals(tmp_path: Path) -> None:
@@ -73,6 +73,29 @@ def test_parse_receipt_file_dispatches_to_eml(tmp_path: Path) -> None:
     parsed = parse_receipt_file(path)
     assert parsed.receipt_id == "ABC123"
     assert parsed.grand_total == Decimal("2.09")
+
+
+def test_parse_receipt_bytes_dispatches_to_eml_logic(tmp_path: Path) -> None:
+    html = """
+    <html><body>
+      <p>Order ID</p><p>BYTE123</p>
+      <p>Date</p><p>2026-02-15</p>
+      <table class="subscription-lockup__container">
+        <tr><td><p>Apple TV+</p></td><td><p>$9.99</p></td></tr>
+      </table>
+      <div class="payment-information">
+        <p>Tax</p><p>$0.80</p>
+        <p>Total</p><p>$10.79</p>
+      </div>
+      <div id="footer_section"></div>
+    </body></html>
+    """
+    path = _write_test_eml(tmp_path / "receipt-bytes.eml", html=html)
+
+    parsed = parse_receipt_bytes(path.read_bytes(), source_name="gmail-mid-1.eml")
+
+    assert parsed.receipt_id == "BYTE123"
+    assert parsed.source_pdf.name == "gmail-mid-1.eml"
 
 
 def test_parse_receipt_eml_handles_quoted_printable_wrapped_lines(tmp_path: Path) -> None:

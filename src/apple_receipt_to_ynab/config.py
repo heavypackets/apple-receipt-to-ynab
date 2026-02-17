@@ -7,6 +7,7 @@ import yaml
 
 from apple_receipt_to_ynab.models import (
     AppConfig,
+    EmailConfig,
     FallbackMapping,
     MappingConfig,
     MappingDefaults,
@@ -18,7 +19,13 @@ from apple_receipt_to_ynab.models import (
 
 ALLOWED_MATCH_TYPES = {"exact", "contains", "regex"}
 ALLOWED_FLAG_COLORS = {"red", "orange", "yellow", "green", "blue", "purple"}
+ALLOWED_APP_MODES = {"local", "email"}
 DEFAULT_YNAB_API_URL = "https://api.ynab.com/v1"
+DEFAULT_YNAB_LOOKBACK_DAYS = 7
+DEFAULT_EMAIL_SUBJECT_FILTER = "Your receipt from Apple."
+DEFAULT_EMAIL_SENDER_FILTER = "no_reply@email.apple.com"
+DEFAULT_EMAIL_MAX_AGE_DAYS = 7
+DEFAULT_EMAIL_MAX_RESULTS = 10
 
 
 class ConfigError(ValueError):
@@ -39,18 +46,61 @@ def load_config(path: Path) -> RuntimeConfig:
         api_token=_required_str(ynab_raw, "api_token"),
         budget_id=_required_str(ynab_raw, "budget_id"),
         api_url=_optional_str(ynab_raw, "api_url") or DEFAULT_YNAB_API_URL,
+        lookback_days=_optional_positive_int(ynab_raw, "lookback_days")
+        or DEFAULT_YNAB_LOOKBACK_DAYS,
     )
 
     app_raw = raw.get("app", {})
     if not isinstance(app_raw, dict):
         raise ConfigError("'app' must be a mapping if provided.")
+    app_mode = (_optional_str(app_raw, "mode") or "local").lower()
+    if app_mode not in ALLOWED_APP_MODES:
+        allowed = ", ".join(sorted(ALLOWED_APP_MODES))
+        raise ConfigError(f"'app.mode' must be one of: {allowed}.")
     log_path = _optional_str(app_raw, "log_path")
-    app = AppConfig(log_path=Path(log_path) if log_path else None)
+    app = AppConfig(mode=app_mode, log_path=Path(log_path) if log_path else None)
+
+    email = _parse_email(path=path, raw=raw.get("email"), app_mode=app_mode)
 
     mappings_raw = _required_mapping(raw, "mappings")
     mappings = _parse_mappings(version=version, raw=mappings_raw)
 
-    return RuntimeConfig(version=version, ynab=ynab, app=app, mappings=mappings)
+    return RuntimeConfig(version=version, ynab=ynab, app=app, email=email, mappings=mappings)
+
+
+def _parse_email(path: Path, raw: Any, app_mode: str) -> EmailConfig:
+    if raw is None:
+        if app_mode == "email":
+            raise ConfigError("'email' is required when 'app.mode' is 'email'.")
+        return EmailConfig()
+    if not isinstance(raw, dict):
+        raise ConfigError("'email' must be a mapping if provided.")
+
+    subject_filter = _optional_str(raw, "subject_filter") or DEFAULT_EMAIL_SUBJECT_FILTER
+    sender_filter = _optional_str(raw, "sender_filter") or DEFAULT_EMAIL_SENDER_FILTER
+    max_age_days = _optional_positive_int(raw, "max_age_days") or DEFAULT_EMAIL_MAX_AGE_DAYS
+    if app_mode == "email":
+        key_path_raw = _required_str(raw, "service_account_key_path")
+        delegated_user_email = _required_str(raw, "delegated_user_email")
+    else:
+        key_path_raw = _optional_str(raw, "service_account_key_path")
+        delegated_user_email = _optional_str(raw, "delegated_user_email")
+
+    key_path: Path | None = None
+    if key_path_raw is not None:
+        key_path = Path(key_path_raw)
+        if not key_path.is_absolute():
+            key_path = path.parent / key_path
+
+    return EmailConfig(
+        subject_filter=subject_filter,
+        sender_filter=sender_filter,
+        max_age_days=max_age_days,
+        service_account_key_path=key_path,
+        delegated_user_email=delegated_user_email,
+        max_results=_optional_positive_int(raw, "max_results") or DEFAULT_EMAIL_MAX_RESULTS,
+        query_extra=_optional_str(raw, "query_extra"),
+    )
 
 
 def _parse_mappings(version: int, raw: dict[str, Any]) -> MappingConfig:
@@ -135,6 +185,15 @@ def _required_int(raw: dict[str, Any], key: str) -> int:
     value = raw.get(key)
     if not isinstance(value, int):
         raise ConfigError(f"'{key}' must be an integer.")
+    return value
+
+
+def _optional_positive_int(raw: dict[str, Any], key: str) -> int | None:
+    value = raw.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ConfigError(f"'{key}' must be a positive integer when set.")
     return value
 
 

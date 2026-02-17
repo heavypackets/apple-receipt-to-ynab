@@ -4,8 +4,10 @@ from pathlib import Path
 
 import apple_receipt_to_ynab.service as service
 import pytest
+from apple_receipt_to_ynab.gmail_client import GmailMessage
 from apple_receipt_to_ynab.models import (
     AppConfig,
+    EmailConfig,
     FallbackMapping,
     MappingConfig,
     MappingDefaults,
@@ -33,8 +35,10 @@ def _build_runtime_config(log_path: Path | None = None, defaults_flag_color: str
             api_token="token-1",
             budget_id="budget-1",
             api_url="https://ynab.test/v1",
+            lookback_days=7,
         ),
-        app=AppConfig(log_path=log_path),
+        app=AppConfig(mode="local", log_path=log_path),
+        email=EmailConfig(),
         mappings=mappings,
     )
 
@@ -154,6 +158,7 @@ def test_process_receipt_posts_once_when_not_dry_run(tmp_path: Path, monkeypatch
     monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
     monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(service, "_list_ynab_transactions_by_account", lambda **_: [])
 
     def _fake_post(
         ynab_budget_id: str,
@@ -200,6 +205,7 @@ def test_process_receipt_409_raises_ynab_api_error(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
     monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(service, "_list_ynab_transactions_by_account", lambda **_: [])
 
     def _raise_409(
         ynab_budget_id: str,
@@ -272,3 +278,96 @@ def test_process_receipt_dry_run_writes_file_and_echoes_to_stdout(
     log_text = log_path.read_text(encoding="utf-8")
     assert "Mode: DRY_RUN (no YNAB API call)" in output
     assert "Mode: DRY_RUN (no YNAB API call)" in log_text
+
+
+def test_process_receipt_skips_duplicate_using_ynab_lookup(tmp_path: Path, monkeypatch) -> None:
+    parsed = _build_parsed_receipt(tmp_path)
+    matched = _build_matched()
+    split_lines = _build_split_lines()
+    runtime_config = _build_runtime_config(log_path=tmp_path / "run.log")
+
+    monkeypatch.setattr(service, "load_config", lambda _path: runtime_config)
+    monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
+    monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
+    monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(
+        service,
+        "_list_ynab_transactions_by_account",
+        lambda **_: [
+            {
+                "id": "existing-tx-1",
+                "account_id": "acct-1",
+                "date": "2026-02-16",
+                "amount": -10800,
+                "memo": "Receipt: RID-1",
+            }
+        ],
+    )
+    monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
+
+    post_calls = {"value": 0}
+
+    def _fake_post(**_: object) -> str:
+        post_calls["value"] += 1
+        return "tx-should-not-post"
+
+    monkeypatch.setattr(service, "_post_ynab_transaction", _fake_post)
+
+    result = process_receipt(
+        receipt_path=tmp_path / "receipt.eml",
+        config_path=tmp_path / "config.yaml",
+        dry_run=False,
+    )
+
+    assert result.status == "duplicate"
+    assert result.transaction_id == "existing-tx-1"
+    assert post_calls["value"] == 0
+
+
+def test_process_receipt_gmail_mode_processes_batch(tmp_path: Path, monkeypatch) -> None:
+    parsed = _build_parsed_receipt(tmp_path)
+    matched = _build_matched()
+    split_lines = _build_split_lines()
+    runtime_config = _build_runtime_config(log_path=tmp_path / "run.log")
+    runtime_config = RuntimeConfig(
+        version=runtime_config.version,
+        ynab=runtime_config.ynab,
+        app=AppConfig(mode="email", log_path=runtime_config.app.log_path),
+        email=EmailConfig(
+            service_account_key_path=tmp_path / "gmail-sa.json",
+            delegated_user_email="robot@example.com",
+        ),
+        mappings=runtime_config.mappings,
+    )
+
+    monkeypatch.setattr(service, "load_config", lambda _path: runtime_config)
+    monkeypatch.setattr(
+        service,
+        "fetch_gmail_messages",
+        lambda _cfg: [GmailMessage(message_id="mid-1", raw_bytes=b"raw"), GmailMessage(message_id="mid-2", raw_bytes=b"raw2")],
+    )
+    monkeypatch.setattr(service, "_parse_gmail_message", lambda _msg, default_currency: parsed)
+    monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
+    monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(service, "_list_ynab_transactions_by_account", lambda **_: [])
+    monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
+
+    post_calls = {"value": 0}
+
+    def _fake_post(**_: object) -> str:
+        post_calls["value"] += 1
+        return f"tx-{post_calls['value']}"
+
+    monkeypatch.setattr(service, "_post_ynab_transaction", _fake_post)
+
+    result = process_receipt(
+        receipt_path=None,
+        config_path=tmp_path / "config.yaml",
+        dry_run=False,
+    )
+
+    assert result.receipt_id == "GMAIL-BATCH"
+    assert result.processed_count == 2
+    assert result.created_count == 1
+    assert result.duplicate_count == 1
+    assert post_calls["value"] == 1

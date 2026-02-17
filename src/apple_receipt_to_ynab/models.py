@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 MatchType = Literal["exact", "contains", "regex"]
+AppMode = Literal["local", "email"]
 
 
 @dataclass(frozen=True)
@@ -73,11 +74,24 @@ class YnabConfig:
     api_token: str
     budget_id: str
     api_url: str
+    lookback_days: int
 
 
 @dataclass(frozen=True)
 class AppConfig:
+    mode: AppMode = "local"
     log_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class EmailConfig:
+    subject_filter: str = "Your receipt from Apple."
+    sender_filter: str = "no_reply@email.apple.com"
+    max_age_days: int = 7
+    service_account_key_path: Path | None = None
+    delegated_user_email: str | None = None
+    max_results: int = 10
+    query_extra: str | None = None
 
 
 @dataclass(frozen=True)
@@ -85,6 +99,7 @@ class RuntimeConfig:
     version: int
     ynab: YnabConfig
     app: AppConfig
+    email: EmailConfig
     mappings: MappingConfig
 
 

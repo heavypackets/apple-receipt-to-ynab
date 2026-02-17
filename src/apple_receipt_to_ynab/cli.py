@@ -4,7 +4,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from apple_receipt_to_ynab.config import ConfigError
+from apple_receipt_to_ynab.config import ConfigError, load_config
+from apple_receipt_to_ynab.gmail_client import GmailApiError
 from apple_receipt_to_ynab.matcher import MappingMatchError, UnmappedSubscriptionError
 from apple_receipt_to_ynab.parser import ReceiptParseError
 from apple_receipt_to_ynab.service import ValidationError, process_receipt
@@ -20,6 +21,14 @@ def main() -> int:
         parser.error(f"Configuration file not found at '{config_path}'. Create config.yaml in the working directory.")
 
     try:
+        runtime_config = load_config(config_path)
+        if runtime_config.app.mode == "local" and args.receipt_path is None:
+            print("Error: receipt_path is required when app.mode is 'local'.", file=sys.stderr)
+            return 1
+        if runtime_config.app.mode == "email" and args.receipt_path is not None:
+            print("Error: receipt_path must not be provided when app.mode is 'email'.", file=sys.stderr)
+            return 1
+
         result = process_receipt(
             receipt_path=args.receipt_path,
             config_path=config_path,
@@ -28,7 +37,15 @@ def main() -> int:
     except UnmappedSubscriptionError as exc:
         print(f"Error (exit code 2): {exc}", file=sys.stderr)
         return 2
-    except (ConfigError, ReceiptParseError, MappingMatchError, TaxAllocationError, ValidationError, YnabApiError) as exc:
+    except (
+        ConfigError,
+        GmailApiError,
+        ReceiptParseError,
+        MappingMatchError,
+        TaxAllocationError,
+        ValidationError,
+        YnabApiError,
+    ) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
 
@@ -43,9 +60,17 @@ def main() -> int:
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="app-store-ynab",
-        description="Parse Apple subscription receipt email files (.eml) and write YNAB transactions using config.yaml.",
+        description=(
+            "Parse Apple subscription receipts from local .eml files or Gmail API and "
+            "write YNAB transactions using config.yaml."
+        ),
     )
-    parser.add_argument("receipt_path", type=Path, help="Path to local Apple receipt email file (.eml).")
+    parser.add_argument(
+        "receipt_path",
+        nargs="?",
+        type=Path,
+        help="Path to local Apple receipt email file (.eml). Required when app.mode=local.",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Parse and compute splits, but do not call YNAB API.")
     return parser
 

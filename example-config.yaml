@@ -4,9 +4,20 @@ ynab:
   api_token: "replace-with-ynab-api-token"
   budget_id: "replace-with-ynab-budget-id"
   api_url: "https://api.ynab.com/v1"
+  lookback_days: 7
 
 app:
+  mode: "local" # "local" or "email"
   log_path: "app_store_ynab.log"
+
+email:
+  subject_filter: "Your receipt from Apple."
+  sender_filter: "no_reply@email.apple.com"
+  max_age_days: 7
+  service_account_key_path: "./gmail-service-account.json"
+  delegated_user_email: "finance-bot@example.com"
+  max_results: 10
+  query_extra: "in:inbox"
 
 mappings:
   defaults:

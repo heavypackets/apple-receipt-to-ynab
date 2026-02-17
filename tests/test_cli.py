@@ -10,6 +10,41 @@ from apple_receipt_to_ynab.models import SubscriptionLine
 from apple_receipt_to_ynab.service import ProcessResult
 
 
+def _write_base_config(path: Path, mode: str = "local") -> None:
+    email_block = """
+email:
+  subject_filter: "Your receipt from Apple."
+  sender_filter: "no_reply@email.apple.com"
+  max_age_days: 7
+  service_account_key_path: "./gmail-sa.json"
+  delegated_user_email: "robot@example.com"
+  max_results: 10
+""" if mode == "email" else ""
+    path.write_text(
+        f"""
+version: 1
+ynab:
+  api_token: "token"
+  budget_id: "budget"
+  lookback_days: 7
+app:
+  mode: "{mode}"
+mappings:
+  defaults:
+    ynab_account_id: "acct"
+  rules:
+    - id: rule1
+      match:
+        type: exact
+        value: "Apple Music"
+      ynab_category_id: "cat"
+      ynab_payee_name: "Apple Music"
+{email_block}
+""".strip(),
+        encoding="utf-8",
+    )
+
+
 def test_main_requires_config_yaml_in_working_directory(tmp_path: Path, monkeypatch, capsys) -> None:
     receipt_path = tmp_path / "receipt.eml"
     receipt_path.write_text("", encoding="utf-8")
@@ -28,7 +63,7 @@ def test_main_returns_exit_code_2_for_unmapped_subscription(tmp_path: Path, monk
     receipt_path = tmp_path / "receipt.eml"
     config_path = tmp_path / "config.yaml"
     receipt_path.write_text("", encoding="utf-8")
-    config_path.write_text("version: 1\n", encoding="utf-8")
+    _write_base_config(config_path, mode="local")
     monkeypatch.chdir(tmp_path)
 
     def _raise_unmapped(**_: object) -> ProcessResult:
@@ -49,7 +84,7 @@ def test_main_prints_success_summary_only_for_non_dry_run(tmp_path: Path, monkey
     receipt_path = tmp_path / "receipt.eml"
     config_path = tmp_path / "config.yaml"
     receipt_path.write_text("", encoding="utf-8")
-    config_path.write_text("version: 1\n", encoding="utf-8")
+    _write_base_config(config_path, mode="local")
     monkeypatch.chdir(tmp_path)
 
     def _fake_process_receipt(**_: object) -> ProcessResult:
@@ -78,7 +113,7 @@ def test_main_dry_run_has_no_cli_specific_subscription_output(tmp_path: Path, mo
     receipt_path = tmp_path / "receipt.eml"
     config_path = tmp_path / "config.yaml"
     receipt_path.write_text("", encoding="utf-8")
-    config_path.write_text("version: 1\n", encoding="utf-8")
+    _write_base_config(config_path, mode="local")
     monkeypatch.chdir(tmp_path)
 
     def _fake_process_receipt(**_: object) -> ProcessResult:
@@ -102,3 +137,29 @@ def test_main_dry_run_has_no_cli_specific_subscription_output(tmp_path: Path, mo
 
     assert exit_code == 0
     assert "Parsed subscriptions:" not in output
+
+
+def test_main_errors_when_local_mode_missing_receipt_path(tmp_path: Path, monkeypatch, capsys) -> None:
+    config_path = tmp_path / "config.yaml"
+    _write_base_config(config_path, mode="local")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["app-store-ynab"])
+
+    exit_code = cli.main()
+
+    assert exit_code == 1
+    assert "app.mode is 'local'" in capsys.readouterr().err
+
+
+def test_main_errors_when_email_mode_receipt_path_is_provided(tmp_path: Path, monkeypatch, capsys) -> None:
+    receipt_path = tmp_path / "receipt.eml"
+    config_path = tmp_path / "config.yaml"
+    receipt_path.write_text("", encoding="utf-8")
+    _write_base_config(config_path, mode="email")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["app-store-ynab", str(receipt_path)])
+
+    exit_code = cli.main()
+
+    assert exit_code == 1
+    assert "must not be provided when app.mode is 'email'" in capsys.readouterr().err

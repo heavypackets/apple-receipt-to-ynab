@@ -1,15 +1,16 @@
 # app-store-ynab
 
-Local CLI tool that parses Apple App Store subscription receipt emails (`.eml`), maps each subscription line to YNAB category/payee rules in YAML, proportionally allocates receipt tax across lines, and creates one YNAB transaction (single-line or split).
+Local CLI tool that parses Apple App Store subscription receipts from local `.eml` files or Gmail API, maps each subscription line to YNAB category/payee rules in YAML, proportionally allocates receipt tax across lines, and creates one YNAB transaction (single-line or split).
 
 ## What it does
 
-- Reads a local receipt email file (`.eml`).
+- Reads a local receipt email file (`.eml`) or fetches recent receipt emails from Gmail API.
 - Loads configuration only from `./config.yaml` in the current working directory.
 - Extracts subscription lines, tax total, and grand total.
 - Matches each subscription against mapping rules in `config.yaml`.
 - Splits tax proportionally across subscription lines using largest-remainder reconciliation.
 - Creates one regular transaction for one subscription, or one split transaction for multiple subscriptions.
+- Prevents duplicate submissions by looking up recent YNAB transactions before posting.
 - Logs runs to a file when `app.log_path` is set; otherwise logs to stdout.
 - In `--dry-run`, always prints the structured run log to stdout and does not call YNAB.
 
@@ -44,9 +45,20 @@ ynab:
   api_token: "your-token"
   budget_id: "your-budget-id"
   api_url: "https://api.ynab.com/v1" # optional
+  lookback_days: 7 # optional
 
 app:
+  mode: "local" # "local" or "email"
   log_path: "app_store_ynab.log" # optional; stdout when omitted
+
+email: # required only when app.mode=email
+  subject_filter: "Your receipt from Apple." # optional
+  sender_filter: "no_reply@email.apple.com" # optional
+  max_age_days: 7 # optional
+  service_account_key_path: "./gmail-service-account.json"
+  delegated_user_email: "finance-bot@example.com"
+  max_results: 10 # optional
+  query_extra: "in:inbox" # optional
 
 mappings:
   defaults:
@@ -122,10 +134,19 @@ Write to YNAB:
 app-store-ynab /path/to/apple_receipt.eml
 ```
 
+Email mode (set `app.mode: email` in config):
+
+```bash
+app-store-ynab --dry-run
+app-store-ynab
+```
+
 ## Notes
 
 - The app requires `config.yaml` in the current working directory.
 - `ynab.api_url` defaults to `https://api.ynab.com/v1` when omitted.
+- `ynab.lookback_days` defaults to `7`; the app checks recent YNAB transactions in that lookback window to skip duplicates.
+- `app.mode` controls source selection: `local` expects a receipt path argument, while `email` reads from Gmail API and must be run without a receipt path.
 - Single-subscription transaction `payee_name` is taken from mapping and does not fallback to `Apple`.
 - For multi-subscription receipts, only the parent transaction has a memo (`Receipt: <receipt_id>`).
 - If `mappings.defaults.ynab_flag_color` is set, created transactions are flagged by default.
@@ -133,6 +154,8 @@ app-store-ynab /path/to/apple_receipt.eml
 - Transactions are posted without `import_id`, so YNAB treats them as user-entered.
 - HTTP 409 responses are treated as normal API errors (same as other non-2xx responses).
 - Transaction posting uses the official Python `ynab` SDK.
+- Email mode uses `google-api-python-client` with service-account domain-wide delegation (`email.delegated_user_email`).
+- Gmail fetch query defaults to `from:no_reply@email.apple.com subject:"Your receipt from Apple." newer_than:7d` and is configurable under `email`.
 - If fallback is not enabled and any subscription is unmapped, the CLI exits with code `2`.
 - Dry-run logs include `Mode: DRY_RUN (no YNAB API call)` and are printed to stdout.
 - The parser reads MIME parts directly and parses the HTML receipt body (supports both `subscription-lockup__container` and `item-cell`/`price-cell` Apple receipt templates) after quoted-printable decoding.

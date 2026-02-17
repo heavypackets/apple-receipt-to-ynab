@@ -1,6 +1,7 @@
 __all__ = [
     "cli",
     "config",
+    "gmail_client",
     "logger",
     "matcher",
     "models",

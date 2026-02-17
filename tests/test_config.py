@@ -2,7 +2,16 @@ from pathlib import Path
 
 import pytest
 
-from apple_receipt_to_ynab.config import DEFAULT_YNAB_API_URL, ConfigError, load_config
+from apple_receipt_to_ynab.config import (
+    DEFAULT_EMAIL_MAX_AGE_DAYS,
+    DEFAULT_EMAIL_MAX_RESULTS,
+    DEFAULT_EMAIL_SENDER_FILTER,
+    DEFAULT_EMAIL_SUBJECT_FILTER,
+    DEFAULT_YNAB_API_URL,
+    DEFAULT_YNAB_LOOKBACK_DAYS,
+    ConfigError,
+    load_config,
+)
 
 
 def test_load_config_parses_nested_config_and_normalizes_fallback_flag_color(tmp_path: Path) -> None:
@@ -43,7 +52,13 @@ mappings:
     assert cfg.ynab.api_token == "token"
     assert cfg.ynab.budget_id == "budget"
     assert cfg.ynab.api_url == "https://ynab.example/v1"
+    assert cfg.ynab.lookback_days == DEFAULT_YNAB_LOOKBACK_DAYS
+    assert cfg.app.mode == "local"
     assert cfg.app.log_path == Path("logs/run.log")
+    assert cfg.email.subject_filter == DEFAULT_EMAIL_SUBJECT_FILTER
+    assert cfg.email.sender_filter == DEFAULT_EMAIL_SENDER_FILTER
+    assert cfg.email.max_age_days == DEFAULT_EMAIL_MAX_AGE_DAYS
+    assert cfg.email.max_results == DEFAULT_EMAIL_MAX_RESULTS
     assert cfg.mappings.defaults.ynab_flag_color == "green"
     assert cfg.mappings.fallback is not None
     assert cfg.mappings.fallback.ynab_flag_color == "yellow"
@@ -75,7 +90,141 @@ mappings:
     cfg = load_config(path)
 
     assert cfg.ynab.api_url == DEFAULT_YNAB_API_URL
+    assert cfg.ynab.lookback_days == DEFAULT_YNAB_LOOKBACK_DAYS
     assert cfg.app.log_path is None
+
+
+def test_load_config_parses_email_mode_and_relative_service_account_path(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    key_path = tmp_path / "secrets" / "gmail-sa.json"
+    path.write_text(
+        """
+version: 1
+ynab:
+  api_token: "token"
+  budget_id: "budget"
+  lookback_days: 45
+app:
+  mode: "email"
+email:
+  subject_filter: "My Custom Subject"
+  sender_filter: "sender@example.com"
+  max_age_days: 14
+  service_account_key_path: "./secrets/gmail-sa.json"
+  delegated_user_email: "robot@example.com"
+  max_results: 50
+  query_extra: "in:anywhere"
+mappings:
+  defaults:
+    ynab_account_id: "acct"
+  rules:
+    - id: r1
+      match:
+        type: exact
+        value: "Apple Music"
+      ynab_category_id: "cat"
+      ynab_payee_name: "Apple Music"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    cfg = load_config(path)
+
+    assert cfg.ynab.lookback_days == 45
+    assert cfg.app.mode == "email"
+    assert cfg.email.subject_filter == "My Custom Subject"
+    assert cfg.email.sender_filter == "sender@example.com"
+    assert cfg.email.max_age_days == 14
+    assert cfg.email.service_account_key_path == key_path
+    assert cfg.email.delegated_user_email == "robot@example.com"
+    assert cfg.email.max_results == 50
+    assert cfg.email.query_extra == "in:anywhere"
+
+
+def test_load_config_rejects_email_mode_without_email_mapping(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+version: 1
+ynab:
+  api_token: "token"
+  budget_id: "budget"
+app:
+  mode: "email"
+mappings:
+  defaults:
+    ynab_account_id: "acct"
+  rules:
+    - id: r1
+      match:
+        type: exact
+        value: "Apple Music"
+      ynab_category_id: "cat"
+      ynab_payee_name: "Apple Music"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="'email' is required"):
+        load_config(path)
+
+
+def test_load_config_rejects_email_mode_without_service_account_path(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+version: 1
+ynab:
+  api_token: "token"
+  budget_id: "budget"
+app:
+  mode: "email"
+email:
+  delegated_user_email: "robot@example.com"
+mappings:
+  defaults:
+    ynab_account_id: "acct"
+  rules:
+    - id: r1
+      match:
+        type: exact
+        value: "Apple Music"
+      ynab_category_id: "cat"
+      ynab_payee_name: "Apple Music"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="service_account_key_path"):
+        load_config(path)
+
+
+def test_load_config_rejects_invalid_lookback_days(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+version: 1
+ynab:
+  api_token: "token"
+  budget_id: "budget"
+  lookback_days: 0
+mappings:
+  defaults:
+    ynab_account_id: "acct"
+  rules:
+    - id: r1
+      enabled: true
+      match:
+        type: exact
+        value: "Apple Music"
+      ynab_category_id: "cat"
+      ynab_payee_name: "Apple Music"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="lookback_days"):
+        load_config(path)
 
 
 def test_load_config_rejects_missing_budget_id(tmp_path: Path) -> None:
