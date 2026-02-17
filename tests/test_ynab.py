@@ -94,6 +94,42 @@ def test_build_parent_transaction_includes_flag_color_when_set() -> None:
     assert tx["flag_color"] == "yellow"
 
 
+def test_build_parent_transaction_multi_line_includes_flag_color_when_set() -> None:
+    lines = [
+        SplitLine(
+            source_description="A",
+            base_milliunits=1000,
+            tax_milliunits=100,
+            total_milliunits=1100,
+            ynab_category_id="cat-a",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee A",
+            mapping_rule_id="a",
+        ),
+        SplitLine(
+            source_description="B",
+            base_milliunits=2000,
+            tax_milliunits=200,
+            total_milliunits=2200,
+            ynab_category_id="cat-b",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee B",
+            mapping_rule_id="b",
+        ),
+    ]
+
+    tx = build_parent_transaction(
+        account_id="acct-1",
+        receipt_id="R-5",
+        receipt_date=date(2026, 2, 16),
+        split_lines=lines,
+        grand_total_milliunits=3300,
+        ynab_flag_color="blue",
+    )
+
+    assert tx["flag_color"] == "blue"
+
+
 def test_build_parent_transaction_single_line_does_not_fallback_payee_name() -> None:
     line = SplitLine(
         source_description="Unknown",

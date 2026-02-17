@@ -47,6 +47,7 @@ class MappingRule:
 class MappingDefaults:
     ynab_account_id: str
     ynab_category_id: str | None = None
+    ynab_flag_color: str | None = None
     default_currency: str = "USD"
 
 
@@ -65,6 +66,26 @@ class MappingConfig:
     defaults: MappingDefaults
     rules: list[MappingRule]
     fallback: FallbackMapping | None = None
+
+
+@dataclass(frozen=True)
+class YnabConfig:
+    api_token: str
+    budget_id: str
+    api_url: str
+
+
+@dataclass(frozen=True)
+class AppConfig:
+    log_path: Path | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeConfig:
+    version: int
+    ynab: YnabConfig
+    app: AppConfig
+    mappings: MappingConfig
 
 
 @dataclass(frozen=True)

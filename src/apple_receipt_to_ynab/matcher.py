@@ -12,6 +12,10 @@ class MappingMatchError(ValueError):
     pass
 
 
+class UnmappedSubscriptionError(MappingMatchError):
+    pass
+
+
 def match_subscriptions(
     subscriptions: list[SubscriptionLine], config: MappingConfig
 ) -> list[MatchedSubscription]:
@@ -56,7 +60,7 @@ def match_subscriptions(
 
     if unmatched:
         joined = "; ".join(unmatched)
-        raise MappingMatchError(f"No mapping rule for: {joined}")
+        raise UnmappedSubscriptionError(f"No mapping rule for: {joined}")
 
     return matched
 

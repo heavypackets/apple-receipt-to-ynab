@@ -6,47 +6,72 @@ from typing import Any
 import yaml
 
 from apple_receipt_to_ynab.models import (
+    AppConfig,
     FallbackMapping,
     MappingConfig,
     MappingDefaults,
     MappingRule,
     MatchSpec,
+    RuntimeConfig,
+    YnabConfig,
 )
 
 ALLOWED_MATCH_TYPES = {"exact", "contains", "regex"}
 ALLOWED_FLAG_COLORS = {"red", "orange", "yellow", "green", "blue", "purple"}
+DEFAULT_YNAB_API_URL = "https://api.ynab.com/v1"
 
 
 class ConfigError(ValueError):
     pass
 
 
-def load_mapping_config(path: Path) -> MappingConfig:
+def load_config(path: Path) -> RuntimeConfig:
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         raise ConfigError("Config root must be a mapping.")
 
     version = _required_int(raw, "version")
     if version != 1:
-        raise ConfigError(f"Unsupported mapping config version: {version}. Expected 1.")
+        raise ConfigError(f"Unsupported config version: {version}. Expected 1.")
 
+    ynab_raw = _required_mapping(raw, "ynab")
+    ynab = YnabConfig(
+        api_token=_required_str(ynab_raw, "api_token"),
+        budget_id=_required_str(ynab_raw, "budget_id"),
+        api_url=_optional_str(ynab_raw, "api_url") or DEFAULT_YNAB_API_URL,
+    )
+
+    app_raw = raw.get("app", {})
+    if not isinstance(app_raw, dict):
+        raise ConfigError("'app' must be a mapping if provided.")
+    log_path = _optional_str(app_raw, "log_path")
+    app = AppConfig(log_path=Path(log_path) if log_path else None)
+
+    mappings_raw = _required_mapping(raw, "mappings")
+    mappings = _parse_mappings(version=version, raw=mappings_raw)
+
+    return RuntimeConfig(version=version, ynab=ynab, app=app, mappings=mappings)
+
+
+def _parse_mappings(version: int, raw: dict[str, Any]) -> MappingConfig:
     defaults_raw = _required_mapping(raw, "defaults")
     defaults = MappingDefaults(
         ynab_account_id=_required_str(defaults_raw, "ynab_account_id"),
         ynab_category_id=_optional_str(defaults_raw, "ynab_category_id"),
+        ynab_flag_color=_optional_flag_color(defaults_raw, "ynab_flag_color"),
         default_currency=_optional_str(defaults_raw, "currency") or "USD",
     )
 
     rules_raw = raw.get("rules")
     if not isinstance(rules_raw, list) or not rules_raw:
-        raise ConfigError("Config must include a non-empty rules list.")
+        raise ConfigError("mappings.rules must be a non-empty list.")
     rules = [_parse_rule(item) for item in rules_raw]
 
     fallback = None
     fallback_raw = raw.get("fallback")
     if fallback_raw is not None:
         if not isinstance(fallback_raw, dict):
-            raise ConfigError("fallback must be a mapping if provided.")
+            raise ConfigError("mappings.fallback must be a mapping if provided.")
         fallback_enabled = bool(fallback_raw.get("enabled", True))
         fallback_payee_name = (
             _required_str(fallback_raw, "ynab_payee_name")

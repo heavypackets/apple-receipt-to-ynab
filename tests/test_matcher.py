@@ -1,6 +1,8 @@
 from decimal import Decimal
 
-from apple_receipt_to_ynab.matcher import match_subscriptions
+import pytest
+
+from apple_receipt_to_ynab.matcher import UnmappedSubscriptionError, match_subscriptions
 from apple_receipt_to_ynab.models import (
     FallbackMapping,
     MappingConfig,
@@ -69,3 +71,18 @@ def test_match_uses_fallback_payee_name_without_defaults() -> None:
     assert matched[0].ynab_payee_name == "Fallback Payee"
     assert matched[0].ynab_category_id == "fallback-cat"
     assert matched[0].mapping_rule_id == "fallback"
+
+
+def test_match_raises_unmapped_error_when_no_rule_and_fallback_disabled() -> None:
+    config = MappingConfig(
+        version=1,
+        defaults=MappingDefaults(ynab_account_id="a1"),
+        rules=[],
+        fallback=None,
+    )
+
+    with pytest.raises(UnmappedSubscriptionError, match="No mapping rule for: Unknown Subscription"):
+        match_subscriptions(
+            [SubscriptionLine(description="Unknown Subscription", base_amount=Decimal("4.99"))],
+            config,
+        )

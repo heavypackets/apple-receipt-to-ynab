@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from apple_receipt_to_ynab.config import load_mapping_config
+from apple_receipt_to_ynab.config import load_config
 from apple_receipt_to_ynab.logger import append_log_block
 from apple_receipt_to_ynab.matcher import match_subscriptions
 from apple_receipt_to_ynab.models import MappingConfig, MatchedSubscription, ParsedReceipt, SplitLine, SubscriptionLine
@@ -31,13 +31,14 @@ class ProcessResult:
 def process_receipt(
     receipt_path: Path,
     config_path: Path,
-    log_path: Path,
-    ynab_budget_id: str,
-    ynab_api_token: str,
     dry_run: bool,
 ) -> ProcessResult:
+    log_path: Path | None = None
     try:
-        config = load_mapping_config(config_path)
+        runtime_config = load_config(config_path)
+        config = runtime_config.mappings
+        log_path = runtime_config.app.log_path
+
         receipt = parse_receipt_file(receipt_path, default_currency=config.defaults.default_currency)
         matched = match_subscriptions(receipt.subscriptions, config)
         split_lines = build_split_lines(matched, receipt.tax_total)
@@ -57,25 +58,34 @@ def process_receipt(
         message = "Dry run completed. No transaction posted."
         transaction_id = None
         if not dry_run:
-            transaction_id = _post_ynab_transaction(
-                ynab_budget_id=ynab_budget_id,
-                ynab_api_token=ynab_api_token,
-                transaction=transaction,
+            client = YnabClient(
+                api_token=runtime_config.ynab.api_token,
+                base_url=runtime_config.ynab.api_url,
             )
-            status = "created"
-            message = f"Posted transaction {transaction_id}."
+            try:
+                result_status, api_payload = client.create_transaction(
+                    budget_id=runtime_config.ynab.budget_id,
+                    transaction=transaction,
+                )
+                status = result_status
+                transaction_id = _extract_transaction_id(api_payload)
+                message = f"Posted transaction {transaction_id}."
+            finally:
+                client.close()
 
         append_log_block(
             log_path,
             _build_log_lines(
                 receipt=receipt,
                 split_lines=split_lines,
-                ynab_budget_id=ynab_budget_id,
+                ynab_budget_id=runtime_config.ynab.budget_id,
                 ynab_account_id=config.defaults.ynab_account_id,
                 status=status,
                 message=message,
                 transaction_id=transaction_id,
+                dry_run=dry_run,
             ),
+            echo_stdout=dry_run,
         )
 
         return ProcessResult(
@@ -130,8 +140,10 @@ def _build_log_lines(
     status: str,
     message: str,
     transaction_id: str | None,
+    dry_run: bool,
 ) -> list[str]:
     lines = [f"[{now_local_iso()}] RUN START", f"Receipt File: {receipt.source_pdf}"]
+    lines.append("Mode: DRY_RUN (no YNAB API call)" if dry_run else "Mode: LIVE_POST")
     lines.append(
         "Receipt: "
         f"id={receipt.receipt_id} date={receipt.receipt_date.isoformat()} currency={receipt.currency}"
@@ -235,8 +247,10 @@ def _post_ynab_transaction(
 
 
 def _resolve_ynab_flag_color(config: MappingConfig, matched: list[MatchedSubscription]) -> str | None:
-    if not config.fallback or not config.fallback.ynab_flag_color:
-        return None
-    if any(item.mapping_rule_id == "fallback" for item in matched):
+    if (
+        config.fallback
+        and config.fallback.ynab_flag_color
+        and any(item.mapping_rule_id == "fallback" for item in matched)
+    ):
         return config.fallback.ynab_flag_color
-    return None
+    return config.defaults.ynab_flag_color

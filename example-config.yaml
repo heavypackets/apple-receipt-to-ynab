@@ -1,0 +1,39 @@
+version: 1
+
+ynab:
+  api_token: "replace-with-ynab-api-token"
+  budget_id: "replace-with-ynab-budget-id"
+  api_url: "https://api.ynab.com/v1"
+
+app:
+  log_path: "apple_receipt_to_ynab.log"
+
+mappings:
+  defaults:
+    ynab_account_id: "replace-with-ynab-account-id"
+    ynab_category_id: "replace-with-fallback-category-id"
+    ynab_flag_color: "blue"
+    currency: "USD"
+
+  rules:
+    - id: apple_music
+      enabled: true
+      match:
+        type: exact
+        value: "Apple Music"
+      ynab_category_id: "replace-with-category-id"
+      ynab_payee_name: "Apple Music"
+
+    - id: icloud
+      enabled: true
+      match:
+        type: contains
+        value: "iCloud+"
+      ynab_category_id: "replace-with-category-id"
+      ynab_payee_name: "Apple iCloud"
+
+  fallback:
+    enabled: true
+    ynab_category_id: "replace-with-fallback-category-id"
+    ynab_payee_name: "Apple"
+    ynab_flag_color: "yellow"
