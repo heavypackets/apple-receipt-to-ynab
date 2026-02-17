@@ -1,4 +1,4 @@
-# apple-receipt-to-ynab
+# app-store-ynab
 
 Local CLI tool that parses Apple App Store subscription receipt emails (`.eml`), maps each subscription line to YNAB category/payee rules in YAML, proportionally allocates receipt tax across lines, and creates one YNAB transaction (single-line or split).
 
@@ -46,7 +46,7 @@ ynab:
   api_url: "https://api.ynab.com/v1" # optional
 
 app:
-  log_path: "apple_receipt_to_ynab.log" # optional; stdout when omitted
+  log_path: "app_store_ynab.log" # optional; stdout when omitted
 
 mappings:
   defaults:
@@ -113,13 +113,13 @@ brew install jq
 Dry run:
 
 ```bash
-apple-receipt-to-ynab /path/to/apple_receipt.eml --dry-run
+app-store-ynab /path/to/apple_receipt.eml --dry-run
 ```
 
 Write to YNAB:
 
 ```bash
-apple-receipt-to-ynab /path/to/apple_receipt.eml
+app-store-ynab /path/to/apple_receipt.eml
 ```
 
 ## Notes

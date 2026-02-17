@@ -14,7 +14,7 @@ def test_main_requires_config_yaml_in_working_directory(tmp_path: Path, monkeypa
     receipt_path = tmp_path / "receipt.eml"
     receipt_path.write_text("", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr(sys, "argv", ["apple-receipt-to-ynab", str(receipt_path)])
+    monkeypatch.setattr(sys, "argv", ["app-store-ynab", str(receipt_path)])
 
     with pytest.raises(SystemExit) as exc:
         cli.main()
@@ -35,7 +35,7 @@ def test_main_returns_exit_code_2_for_unmapped_subscription(tmp_path: Path, monk
         raise UnmappedSubscriptionError("No mapping rule for: Unknown Subscription")
 
     monkeypatch.setattr(cli, "process_receipt", _raise_unmapped)
-    monkeypatch.setattr(sys, "argv", ["apple-receipt-to-ynab", str(receipt_path)])
+    monkeypatch.setattr(sys, "argv", ["app-store-ynab", str(receipt_path)])
 
     exit_code = cli.main()
     stderr = capsys.readouterr().err
@@ -65,7 +65,7 @@ def test_main_prints_success_summary_only_for_non_dry_run(tmp_path: Path, monkey
         )
 
     monkeypatch.setattr(cli, "process_receipt", _fake_process_receipt)
-    monkeypatch.setattr(sys, "argv", ["apple-receipt-to-ynab", str(receipt_path)])
+    monkeypatch.setattr(sys, "argv", ["app-store-ynab", str(receipt_path)])
 
     exit_code = cli.main()
     output = capsys.readouterr().out
@@ -95,7 +95,7 @@ def test_main_dry_run_has_no_cli_specific_subscription_output(tmp_path: Path, mo
         )
 
     monkeypatch.setattr(cli, "process_receipt", _fake_process_receipt)
-    monkeypatch.setattr(sys, "argv", ["apple-receipt-to-ynab", str(receipt_path), "--dry-run"])
+    monkeypatch.setattr(sys, "argv", ["app-store-ynab", str(receipt_path), "--dry-run"])
 
     exit_code = cli.main()
     output = capsys.readouterr().out

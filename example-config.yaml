@@ -6,7 +6,7 @@ ynab:
   api_url: "https://api.ynab.com/v1"
 
 app:
-  log_path: "apple_receipt_to_ynab.log"
+  log_path: "app_store_ynab.log"
 
 mappings:
   defaults:

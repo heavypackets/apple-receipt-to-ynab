@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "apple-receipt-to-ynab"
+name = "app-store-ynab"
 version = "0.1.0"
 description = "Parse Apple subscription receipt emails and create YNAB split transactions."
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-apple-receipt-to-ynab = "apple_receipt_to_ynab.cli:main"
+app-store-ynab = "apple_receipt_to_ynab.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

@@ -42,7 +42,7 @@ def main() -> int:
 
 def _build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="apple-receipt-to-ynab",
+        prog="app-store-ynab",
         description="Parse Apple subscription receipt email files (.eml) and write YNAB transactions using config.yaml.",
     )
     parser.add_argument("receipt_path", type=Path, help="Path to local Apple receipt email file (.eml).")
