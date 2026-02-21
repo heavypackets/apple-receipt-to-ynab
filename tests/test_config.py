@@ -165,7 +165,33 @@ mappings:
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigError, match="'email' is required"):
+    with pytest.raises(ConfigError, match="'email' section is required"):
+        load_config(path)
+
+
+def test_load_config_rejects_invalid_yaml_with_friendly_message(tmp_path: Path) -> None:
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        """
+version: 1
+ynab:
+  api_token: "token"
+  budget_id: "budget"
+mappings:
+  defaults:
+    ynab_account_id: "acct"
+  rules:
+    - id: r1
+      match:
+        type: exact
+        value: "Apple Music
+      ynab_category_id: "cat"
+      ynab_payee_name: "Apple Music"
+""".strip(),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="Invalid config.yaml: YAML syntax is invalid"):
         load_config(path)
 
 

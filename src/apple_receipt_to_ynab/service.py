@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import socket
+import time
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -7,7 +9,7 @@ from typing import Any
 
 from apple_receipt_to_ynab.config import load_config
 from apple_receipt_to_ynab.gmail_client import GmailMessage, fetch_gmail_messages
-from apple_receipt_to_ynab.logger import append_log_block
+from apple_receipt_to_ynab.logger import append_log_event
 from apple_receipt_to_ynab.matcher import match_subscriptions
 from apple_receipt_to_ynab.models import MappingConfig, MatchedSubscription, ParsedReceipt, RuntimeConfig, SplitLine, SubscriptionLine
 from apple_receipt_to_ynab.parser import parse_receipt_bytes, parse_receipt_file
@@ -16,6 +18,9 @@ from apple_receipt_to_ynab.utils import dollars_to_milliunits, milliunits_to_dol
 from apple_receipt_to_ynab.ynab import YnabApiError, build_parent_transaction
 
 TransactionKey = tuple[str, str, int, str]
+YNAB_REQUEST_TIMEOUT_SECONDS = 10
+YNAB_MAX_RETRIES = 2
+YNAB_RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 
 
 class ValidationError(ValueError):
@@ -58,15 +63,15 @@ def process_receipt(
             dry_run=dry_run,
         )
     except Exception as exc:
-        append_log_block(
+        append_log_event(
             log_path,
-            [
-                f"[{now_local_iso()}] RUN START",
-                f"Receipt File: {source_label}",
-                f"Result: FAILED {exc}",
-                "RUN END",
-                "",
-            ],
+            {
+                "timestamp": now_local_iso(),
+                "event_name": "receipt_run_failed",
+                "source_label": source_label,
+                "status": "failed",
+                "error_message": str(exc),
+            },
         )
         raise
 
@@ -92,16 +97,16 @@ def _process_gmail_batch(runtime_config: RuntimeConfig, dry_run: bool) -> Proces
     config = runtime_config.mappings
     gmail_messages = fetch_gmail_messages(runtime_config.email)
     if not gmail_messages:
-        append_log_block(
+        append_log_event(
             runtime_config.app.log_path,
-            [
-                f"[{now_local_iso()}] RUN START",
-                "Receipt File: email://batch",
-                "Mode: DRY_RUN (no YNAB API call)" if dry_run else "Mode: LIVE_POST",
-                "Result: noop No Gmail messages matched configured filter.",
-                "RUN END",
-                "",
-            ],
+            {
+                "timestamp": now_local_iso(),
+                "event_name": "gmail_batch_noop",
+                "source_label": "email://batch",
+                "mode": "dry_run" if dry_run else "live_post",
+                "status": "noop",
+                "message": "No Gmail messages matched configured filter.",
+            },
             echo_stdout=dry_run,
         )
         return ProcessResult(
@@ -214,9 +219,9 @@ def _process_parsed_receipt(
             if existing_transactions is not None:
                 existing_transactions[key] = transaction_id
 
-    append_log_block(
+    append_log_event(
         runtime_config.app.log_path,
-        _build_log_lines(
+        _build_log_event(
             receipt=receipt,
             split_lines=split_lines,
             ynab_budget_id=runtime_config.ynab.budget_id,
@@ -265,7 +270,7 @@ def _validate_totals(receipt: ParsedReceipt, split_lines: list[SplitLine], paren
         )
 
 
-def _build_log_lines(
+def _build_log_event(
     receipt: ParsedReceipt,
     split_lines: list[SplitLine],
     ynab_budget_id: str,
@@ -274,45 +279,53 @@ def _build_log_lines(
     message: str,
     transaction_id: str | None,
     dry_run: bool,
-) -> list[str]:
-    lines = [f"[{now_local_iso()}] RUN START", f"Receipt File: {receipt.source_pdf}"]
-    lines.append("Mode: DRY_RUN (no YNAB API call)" if dry_run else "Mode: LIVE_POST")
-    lines.append(
-        "Receipt: "
-        f"id={receipt.receipt_id} date={receipt.receipt_date.isoformat()} currency={receipt.currency}"
-    )
-    lines.append("Items:")
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
     for line in split_lines:
-        label = line.ynab_payee_name or line.ynab_payee_id or line.source_description
-        lines.append(
-            "- "
-            f"{label} | "
-            f"source={line.source_description} | "
-            f"base={milliunits_to_dollars(line.base_milliunits)} | "
-            f"tax={milliunits_to_dollars(line.tax_milliunits)} | "
-            f"total={milliunits_to_dollars(line.total_milliunits)} | "
-            f"category={line.ynab_category_id} | "
-            f"payee={line.ynab_payee_id or line.ynab_payee_name or 'none'}"
-        )
+        item: dict[str, Any] = {
+            "source_description": line.source_description,
+            "base_amount": str(milliunits_to_dollars(line.base_milliunits)),
+            "tax_amount": str(milliunits_to_dollars(line.tax_milliunits)),
+            "total_amount": str(milliunits_to_dollars(line.total_milliunits)),
+            "ynab_category_id": line.ynab_category_id,
+            "mapping_rule_id": line.mapping_rule_id,
+        }
+        if line.ynab_payee_id is not None:
+            item["ynab_payee_id"] = line.ynab_payee_id
+        if line.ynab_payee_name is not None:
+            item["ynab_payee_name"] = line.ynab_payee_name
+        items.append(item)
 
     base_total = sum(line.base_milliunits for line in split_lines)
     tax_total = sum(line.tax_milliunits for line in split_lines)
     grand_total = sum(line.total_milliunits for line in split_lines)
-    lines.append(
-        "Totals: "
-        f"base={milliunits_to_dollars(base_total)} "
-        f"tax={milliunits_to_dollars(tax_total)} "
-        f"grand={milliunits_to_dollars(grand_total)} "
-        f"reconciled={'yes' if grand_total == dollars_to_milliunits(receipt.grand_total) else 'no'}"
-    )
-    lines.append(f"YNAB: budget={ynab_budget_id} account={ynab_account_id}")
-    if transaction_id:
-        lines.append(f"Result: {status} transaction_id={transaction_id}")
-    else:
-        lines.append(f"Result: {status} {message}")
-    lines.append("RUN END")
-    lines.append("")
-    return lines
+    event: dict[str, Any] = {
+        "timestamp": now_local_iso(),
+        "event_name": "receipt_processed",
+        "mode": "dry_run" if dry_run else "live_post",
+        "source_label": str(receipt.source_pdf),
+        "status": status.lower(),
+        "message": message,
+        "receipt": {
+            "receipt_id": receipt.receipt_id,
+            "receipt_date": receipt.receipt_date.isoformat(),
+            "currency": receipt.currency,
+        },
+        "items": items,
+        "totals": {
+            "base_amount": str(milliunits_to_dollars(base_total)),
+            "tax_amount": str(milliunits_to_dollars(tax_total)),
+            "grand_total_amount": str(milliunits_to_dollars(grand_total)),
+            "reconciled": grand_total == dollars_to_milliunits(receipt.grand_total),
+        },
+        "ynab": {
+            "budget_id": ynab_budget_id,
+            "account_id": ynab_account_id,
+        },
+    }
+    if transaction_id is not None:
+        event["transaction_id"] = transaction_id
+    return event
 
 
 def _extract_transaction_id(payload: object) -> str | None:
@@ -366,17 +379,20 @@ def _post_ynab_transaction(
 
     configuration = ynab.Configuration(access_token=ynab_api_token)
     configuration.host = ynab_api_url.rstrip("/")
+    api_exception = getattr(ynab, "ApiException", None)
     try:
-        with ynab.ApiClient(configuration) as api_client:
-            api = ynab.TransactionsApi(api_client)
-            response = api.create_transaction(ynab_budget_id, wrapper)
+        response = _run_ynab_api_call_with_retries(
+            operation_name="create_transaction",
+            call=lambda: _create_ynab_transaction_request(
+                ynab_module=ynab,
+                configuration=configuration,
+                ynab_budget_id=ynab_budget_id,
+                wrapper=wrapper,
+            ),
+            api_exception=api_exception,
+        )
     except Exception as exc:
-        api_exception = getattr(ynab, "ApiException", None)
-        if api_exception is not None and isinstance(exc, api_exception):
-            status = getattr(exc, "status", "unknown")
-            error_body = getattr(exc, "body", None) or getattr(exc, "reason", None) or str(exc)
-            raise YnabApiError(f"YNAB API {status}: {error_body}") from exc
-        raise
+        raise _build_ynab_api_error("create_transaction", exc, api_exception) from exc
 
     return _extract_transaction_id(response)
 
@@ -420,21 +436,21 @@ def _list_ynab_transactions_by_account(
 
     configuration = ynab.Configuration(access_token=ynab_api_token)
     configuration.host = ynab_api_url.rstrip("/")
+    api_exception = getattr(ynab, "ApiException", None)
     try:
-        with ynab.ApiClient(configuration) as api_client:
-            api = ynab.TransactionsApi(api_client)
-            response = api.get_transactions_by_account(
-                budget_id=ynab_budget_id,
+        response = _run_ynab_api_call_with_retries(
+            operation_name="list_transactions",
+            call=lambda: _list_ynab_transactions_request(
+                ynab_module=ynab,
+                configuration=configuration,
+                ynab_budget_id=ynab_budget_id,
                 account_id=account_id,
                 since_date=since_date,
-            )
+            ),
+            api_exception=api_exception,
+        )
     except Exception as exc:
-        api_exception = getattr(ynab, "ApiException", None)
-        if api_exception is not None and isinstance(exc, api_exception):
-            status = getattr(exc, "status", "unknown")
-            error_body = getattr(exc, "body", None) or getattr(exc, "reason", None) or str(exc)
-            raise YnabApiError(f"YNAB API {status}: {error_body}") from exc
-        raise
+        raise _build_ynab_api_error("list_transactions", exc, api_exception) from exc
 
     data = getattr(response, "data", None)
     transactions = getattr(data, "transactions", None)
@@ -506,3 +522,132 @@ def _resolve_ynab_flag_color(config: MappingConfig, matched: list[MatchedSubscri
     ):
         return config.fallback.ynab_flag_color
     return config.defaults.ynab_flag_color
+
+
+def _create_ynab_transaction_request(
+    ynab_module: Any,
+    configuration: Any,
+    ynab_budget_id: str,
+    wrapper: Any,
+) -> Any:
+    with ynab_module.ApiClient(configuration) as api_client:
+        api = ynab_module.TransactionsApi(api_client)
+        return api.create_transaction(
+            ynab_budget_id,
+            wrapper,
+            _request_timeout=YNAB_REQUEST_TIMEOUT_SECONDS,
+        )
+
+
+def _list_ynab_transactions_request(
+    ynab_module: Any,
+    configuration: Any,
+    ynab_budget_id: str,
+    account_id: str,
+    since_date: date,
+) -> Any:
+    with ynab_module.ApiClient(configuration) as api_client:
+        api = ynab_module.TransactionsApi(api_client)
+        return api.get_transactions_by_account(
+            budget_id=ynab_budget_id,
+            account_id=account_id,
+            since_date=since_date,
+            _request_timeout=YNAB_REQUEST_TIMEOUT_SECONDS,
+        )
+
+
+def _run_ynab_api_call_with_retries(
+    operation_name: str,
+    call: Any,
+    api_exception: type[BaseException] | None,
+) -> Any:
+    for attempt in range(YNAB_MAX_RETRIES + 1):
+        try:
+            return call()
+        except Exception as exc:
+            if not _is_retryable_ynab_exception(exc, api_exception) or attempt >= YNAB_MAX_RETRIES:
+                raise
+            time.sleep(0.25 * (2**attempt))
+    raise RuntimeError(f"Unexpected retry loop exit for {operation_name}.")
+
+
+def _is_retryable_ynab_exception(
+    exc: Exception,
+    api_exception: type[BaseException] | None,
+) -> bool:
+    if _is_connectivity_exception(exc):
+        return True
+    if api_exception is None or not isinstance(exc, api_exception):
+        return False
+
+    status = getattr(exc, "status", None)
+    if isinstance(status, int) and status in YNAB_RETRYABLE_STATUS_CODES:
+        return True
+    return _is_connectivity_exception(getattr(exc, "reason", None))
+
+
+def _is_connectivity_exception(exc: object) -> bool:
+    if isinstance(exc, (TimeoutError, ConnectionError, socket.timeout)):
+        return True
+    try:
+        from urllib3 import exceptions as urllib3_exceptions  # type: ignore
+    except Exception:
+        return False
+    return isinstance(
+        exc,
+        (
+            urllib3_exceptions.ConnectTimeoutError,
+            urllib3_exceptions.MaxRetryError,
+            urllib3_exceptions.NewConnectionError,
+            urllib3_exceptions.ProtocolError,
+            urllib3_exceptions.ReadTimeoutError,
+        ),
+    )
+
+
+def _build_ynab_api_error(
+    operation_name: str,
+    exc: Exception,
+    api_exception: type[BaseException] | None,
+) -> YnabApiError:
+    if _is_connectivity_exception(exc):
+        if operation_name == "create_transaction":
+            return YnabApiError(
+                "Could not connect to the YNAB API while creating the transaction. "
+                "We could not confirm whether YNAB saved the transaction. "
+                "Please check YNAB before retrying."
+            )
+        return YnabApiError(
+            "Could not connect to the YNAB API while loading existing transactions. No actions were taken."
+        )
+
+    if api_exception is not None and isinstance(exc, api_exception):
+        reason = getattr(exc, "reason", None)
+        if _is_connectivity_exception(reason):
+            if operation_name == "create_transaction":
+                return YnabApiError(
+                    "Could not connect to the YNAB API while creating the transaction. "
+                    "We could not confirm whether YNAB saved the transaction. "
+                    "Please check YNAB before retrying."
+                )
+            return YnabApiError(
+                "Could not connect to the YNAB API while loading existing transactions. No actions were taken."
+            )
+        status = getattr(exc, "status", None)
+        status_text = str(status) if status is not None else "unknown"
+        error_body = getattr(exc, "body", None) or reason or str(exc)
+        if operation_name == "create_transaction":
+            return YnabApiError(
+                f"YNAB API request failed (status {status_text}): {error_body}. No transaction was created."
+            )
+        return YnabApiError(
+            f"YNAB API request failed (status {status_text}): {error_body}. No actions were taken."
+        )
+
+    if operation_name == "create_transaction":
+        return YnabApiError(
+            f"Could not create the YNAB transaction: {exc}. No transaction was created."
+        )
+    return YnabApiError(
+        f"Could not load transactions from YNAB: {exc}. No actions were taken."
+    )

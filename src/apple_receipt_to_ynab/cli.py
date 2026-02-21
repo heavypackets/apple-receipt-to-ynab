@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -13,20 +14,35 @@ from apple_receipt_to_ynab.tax import TaxAllocationError
 from apple_receipt_to_ynab.ynab import YnabApiError
 
 
+class FriendlyArgumentParser(argparse.ArgumentParser):
+    def error(self, message: str) -> None:  # pragma: no cover - argparse exits by design
+        self.print_usage(sys.stderr)
+        self.exit(2, f"Error: {message}\n")
+
+
 def main() -> int:
     parser = _build_arg_parser()
     args = parser.parse_args()
     config_path = Path.cwd() / "config.yaml"
     if not config_path.exists():
-        parser.error(f"Configuration file not found at '{config_path}'. Create config.yaml in the working directory.")
+        parser.error(
+            f"Could not find 'config.yaml' at '{config_path}'. "
+            "Create a config.yaml file in the current working directory."
+        )
 
     try:
         runtime_config = load_config(config_path)
         if runtime_config.app.mode == "local" and args.receipt_path is None:
-            print("Error: receipt_path is required when app.mode is 'local'.", file=sys.stderr)
+            print(
+                "Error: Missing required argument 'receipt_path' when app.mode is 'local'.",
+                file=sys.stderr,
+            )
             return 1
         if runtime_config.app.mode == "email" and args.receipt_path is not None:
-            print("Error: receipt_path must not be provided when app.mode is 'email'.", file=sys.stderr)
+            print(
+                "Error: Do not provide 'receipt_path' when app.mode is 'email'.",
+                file=sys.stderr,
+            )
             return 1
 
         result = process_receipt(
@@ -51,14 +67,25 @@ def main() -> int:
 
     if not args.dry_run:
         print(
-            f"{result.status}: receipt={result.receipt_id} "
-            f"amount_milliunits={result.parent_amount_milliunits} {result.message}"
+            json.dumps(
+                {
+                    "event_name": "cli_process_result",
+                    "status": result.status.lower(),
+                    "receipt_id": result.receipt_id,
+                    "parent_amount_milliunits": result.parent_amount_milliunits,
+                    "message": result.message,
+                    "transaction_id": result.transaction_id,
+                },
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
         )
     return 0
 
 
 def _build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = FriendlyArgumentParser(
         prog="app-store-ynab",
         description=(
             "Parse Apple subscription receipts from local .eml files or Gmail API and "

@@ -10,14 +10,14 @@ def test_parse_alt_format_single_item(tmp_path: Path) -> None:
     html = """
 <html><body>
   <div>DATE</div><div>Feb 11, 2026</div>
-  <div>ORDER ID</div><div>MSD3TZ09X1</div>
-  <div>DOCUMENT NO.</div><div>776090195289</div>
+  <div>ORDER ID</div><div>ALT-ORDER-001</div>
+  <div>DOCUMENT NO.</div><div>DOC-000009876543</div>
 
   <table>
     <tr>
       <td class="item-cell">
-        <span class="title">Meta Verified For Business</span><br/>
-        <span class="addon-duration">Meta Verified For Business (Monthly)</span><br/>
+        <span class="title">Business Insights Hub</span><br/>
+        <span class="addon-duration">Business Insights Hub (Monthly)</span><br/>
         <span class="renewal">Renews Mar 11, 2026</span>
       </td>
       <td class="price-cell"><span>$14.99</span></td>
@@ -35,12 +35,12 @@ def test_parse_alt_format_single_item(tmp_path: Path) -> None:
     path = _write_test_eml(tmp_path / "alt-single.eml", html)
     parsed = parse_receipt_eml(path)
 
-    assert parsed.receipt_id == "MSD3TZ09X1"
+    assert parsed.receipt_id == "ALT-ORDER-001"
     assert parsed.receipt_date.isoformat() == "2026-02-11"
     assert parsed.tax_total == Decimal("1.05")
     assert parsed.grand_total == Decimal("16.04")
     assert [item.description for item in parsed.subscriptions] == [
-        "Meta Verified For Business - Meta Verified For Business (Monthly)"
+        "Business Insights Hub - Business Insights Hub (Monthly)"
     ]
     assert [item.base_amount for item in parsed.subscriptions] == [Decimal("14.99")]
 
@@ -49,13 +49,13 @@ def test_parse_alt_format_multiple_items_ignores_mobile_duplicate_rows(tmp_path:
     html = """
 <html><body>
   <div>DATE</div><div>Jan 13, 2026</div>
-  <div>ORDER ID</div><div>MSD3N458LX</div>
+  <div>ORDER ID</div><div>ALT-ORDER-002</div>
 
   <table>
     <tr>
       <td class="item-cell">
-        <span class="title">Card Counter</span><br/>
-        <span class="artist">TMSOFT</span><br/>
+        <span class="title">Focus Timer</span><br/>
+        <span class="artist">Example Labs</span><br/>
         <span class="type">iOS App</span><br/>
         <span class="device">hp-cell</span>
       </td>
@@ -63,8 +63,8 @@ def test_parse_alt_format_multiple_items_ignores_mobile_duplicate_rows(tmp_path:
     </tr>
     <tr>
       <td class="item-cell aapl-mobile-cell">
-        <span class="title">Card Counter</span><br/>
-        <span class="artist">TMSOFT</span><br/>
+        <span class="title">Focus Timer</span><br/>
+        <span class="artist">Example Labs</span><br/>
         <span class="type">iOS App</span><br/>
         <span class="device">hp-cell</span>
       </td>
@@ -72,16 +72,16 @@ def test_parse_alt_format_multiple_items_ignores_mobile_duplicate_rows(tmp_path:
     </tr>
     <tr>
       <td class="item-cell">
-        <span class="title">NGL: ask me anything</span><br/>
-        <span class="addon-duration">ngl unlimited hints (7 Days)</span><br/>
+        <span class="title">Prompt Board</span><br/>
+        <span class="addon-duration">Prompt Board Plus (7 Days)</span><br/>
         <span class="renewal">Renews Jan 18, 2026</span>
       </td>
       <td class="price-cell"><span>$0.99</span></td>
     </tr>
     <tr>
       <td class="item-cell">
-        <span class="title">NGL: ask me anything</span><br/>
-        <span class="addon-duration">ngl unlimited hints (7 Days)</span><br/>
+        <span class="title">Prompt Board</span><br/>
+        <span class="addon-duration">Prompt Board Plus (7 Days)</span><br/>
         <span class="renewal">Renews Jan 25, 2026</span>
       </td>
       <td class="price-cell"><span>$0.99</span></td>
@@ -98,14 +98,14 @@ def test_parse_alt_format_multiple_items_ignores_mobile_duplicate_rows(tmp_path:
     path = _write_test_eml(tmp_path / "alt-multi.eml", html)
     parsed = parse_receipt_eml(path)
 
-    assert parsed.receipt_id == "MSD3N458LX"
+    assert parsed.receipt_id == "ALT-ORDER-002"
     assert parsed.receipt_date.isoformat() == "2026-01-13"
     assert parsed.tax_total == Decimal("0.35")
     assert parsed.grand_total == Decimal("5.32")
     assert [item.description for item in parsed.subscriptions] == [
-        "Card Counter",
-        "NGL: ask me anything - ngl unlimited hints (7 Days)",
-        "NGL: ask me anything - ngl unlimited hints (7 Days)",
+        "Focus Timer",
+        "Prompt Board - Prompt Board Plus (7 Days)",
+        "Prompt Board - Prompt Board Plus (7 Days)",
     ]
     assert [item.base_amount for item in parsed.subscriptions] == [
         Decimal("2.99"),

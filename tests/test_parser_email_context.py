@@ -14,8 +14,8 @@ Random preface charge 999.99
 Apple Services Receipt
 Order ID: MKT-ABC123
 02/11/2026
-Apple Music $10.99
-iCloud+ $2.99
+Team Notes Pro $10.99
+Cloud Storage Basic $2.99
 Tax $1.12
 Total $15.10
 
@@ -28,14 +28,14 @@ Printed by Gmail 123.45
     assert parsed.receipt_date.isoformat() == "2026-02-11"
     assert parsed.tax_total == Decimal("1.12")
     assert parsed.grand_total == Decimal("15.10")
-    assert [item.description for item in parsed.subscriptions] == ["Apple Music", "iCloud+"]
+    assert [item.description for item in parsed.subscriptions] == ["Team Notes Pro", "Cloud Storage Basic"]
 
 
 def test_parse_receipt_text_parses_simple_receipt() -> None:
     raw_text = """
 Order ID: MKT-SIMPLE1
 2026-02-12
-Apple One $19.95
+Starter Productivity Bundle $19.95
 Tax $1.60
 Total $21.55
 """
@@ -45,5 +45,4 @@ Total $21.55
     assert parsed.receipt_date.isoformat() == "2026-02-12"
     assert parsed.tax_total == Decimal("1.60")
     assert parsed.grand_total == Decimal("21.55")
-    assert [item.description for item in parsed.subscriptions] == ["Apple One"]
-
+    assert [item.description for item in parsed.subscriptions] == ["Starter Productivity Bundle"]

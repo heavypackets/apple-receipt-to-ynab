@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -177,7 +178,7 @@ def test_process_receipt_posts_once_when_not_dry_run(tmp_path: Path, monkeypatch
         return "tx-1"
 
     monkeypatch.setattr(service, "_post_ynab_transaction", _fake_post)
-    monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "append_log_event", lambda *_args, **_kwargs: None)
     result = process_receipt(
         receipt_path=tmp_path / "receipt.eml",
         config_path=tmp_path / "config.yaml",
@@ -217,7 +218,7 @@ def test_process_receipt_409_raises_ynab_api_error(tmp_path: Path, monkeypatch) 
         raise YnabApiError("YNAB API 409: duplicate")
 
     monkeypatch.setattr(service, "_post_ynab_transaction", _raise_409)
-    monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "append_log_event", lambda *_args, **_kwargs: None)
 
     with pytest.raises(YnabApiError, match="409"):
         process_receipt(
@@ -250,8 +251,10 @@ def test_process_receipt_dry_run_logs_to_stdout_when_log_path_missing(
 
     output = capsys.readouterr().out
     assert result.status == "DRY_RUN"
-    assert "Mode: DRY_RUN (no YNAB API call)" in output
-    assert "Result: DRY_RUN Dry run completed. No transaction posted." in output
+    event = json.loads(output.strip())
+    assert event["mode"] == "dry_run"
+    assert event["status"] == "dry_run"
+    assert event["message"] == "Dry run completed. No transaction posted."
 
 
 def test_process_receipt_dry_run_writes_file_and_echoes_to_stdout(
@@ -276,8 +279,11 @@ def test_process_receipt_dry_run_writes_file_and_echoes_to_stdout(
 
     output = capsys.readouterr().out
     log_text = log_path.read_text(encoding="utf-8")
-    assert "Mode: DRY_RUN (no YNAB API call)" in output
-    assert "Mode: DRY_RUN (no YNAB API call)" in log_text
+    output_event = json.loads(output.strip())
+    file_event = json.loads(log_text.strip())
+    assert output_event["mode"] == "dry_run"
+    assert output_event["event_name"] == "receipt_processed"
+    assert file_event == output_event
 
 
 def test_process_receipt_skips_duplicate_using_ynab_lookup(tmp_path: Path, monkeypatch) -> None:
@@ -303,7 +309,7 @@ def test_process_receipt_skips_duplicate_using_ynab_lookup(tmp_path: Path, monke
             }
         ],
     )
-    monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "append_log_event", lambda *_args, **_kwargs: None)
 
     post_calls = {"value": 0}
 
@@ -350,7 +356,7 @@ def test_process_receipt_gmail_mode_processes_batch(tmp_path: Path, monkeypatch)
     monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
     monkeypatch.setattr(service, "_list_ynab_transactions_by_account", lambda **_: [])
-    monkeypatch.setattr(service, "append_log_block", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "append_log_event", lambda *_args, **_kwargs: None)
 
     post_calls = {"value": 0}
 

@@ -1,3 +1,4 @@
+import json
 import sys
 from decimal import Decimal
 from pathlib import Path
@@ -106,7 +107,13 @@ def test_main_prints_success_summary_only_for_non_dry_run(tmp_path: Path, monkey
     output = capsys.readouterr().out
 
     assert exit_code == 0
-    assert "created: receipt=ABC123 amount_milliunits=-13980 Posted transaction tx-1." in output
+    payload = json.loads(output.strip())
+    assert payload["event_name"] == "cli_process_result"
+    assert payload["status"] == "created"
+    assert payload["receipt_id"] == "ABC123"
+    assert payload["parent_amount_milliunits"] == -13980
+    assert payload["message"] == "Posted transaction tx-1."
+    assert payload["transaction_id"] == "tx-1"
 
 
 def test_main_dry_run_has_no_cli_specific_subscription_output(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -162,4 +169,4 @@ def test_main_errors_when_email_mode_receipt_path_is_provided(tmp_path: Path, mo
     exit_code = cli.main()
 
     assert exit_code == 1
-    assert "must not be provided when app.mode is 'email'" in capsys.readouterr().err
+    assert "Do not provide 'receipt_path' when app.mode is 'email'" in capsys.readouterr().err
