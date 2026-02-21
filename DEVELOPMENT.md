@@ -13,11 +13,11 @@ python3 -m pip install -e ".[dev]"
 Use the helper script (creates `.venv` if missing, installs dev dependencies, then runs pytest):
 
 ```bash
-./scripts/run_tests.sh
+./run_tests.sh
 ```
 
 Run a subset:
 
 ```bash
-./scripts/run_tests.sh tests/test_service.py
+./run_tests.sh tests/test_service.py
 ```

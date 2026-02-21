@@ -10,20 +10,21 @@ Local CLI tool that parses Apple App Store subscription receipts from local `.em
 - Prevents duplicate transactions by looking up recent YNAB transactions (7 days prior by default).
 - With the `--dry-run` argument, always prints the processing log to stdout and does not make calls to YNAB.
 
-## Install
+## Install using pipx
 ```bash
 ./install_app.sh
 ```
 
 ## Configure
 
-1. Copy the example config:
+1. Create your config file at `~/.asy/config.yaml`:
 
 ```bash
-cp example-config.yaml ./config.yaml
+mkdir -p ~/.asy
+cp example-config.yaml ~/.asy/config.yaml
 ```
 
-1. Edit `config.yaml` wtih your YNAB credentials, budget information and subcription mappings.
+1. Edit `~/.asy/config.yaml` with your YNAB credentials, budget information and subscription mappings.
 1. `app.mode` controls receipt source: `local` expects a receipt path argument, while `email` reads receipts from your Gmail account.
 
 ### `config.yaml` schema
@@ -77,6 +78,9 @@ mappings:
 - If fallback is used and `mappings.fallback.ynab_flag_color` is set, fallback color overrides the default flag color.
 
 ## Run
+
+By default, the app reads config from `~/.asy/config.yaml`.
+Use `--config /path/to/config.yaml` to override.
 
 Local receipts:
 

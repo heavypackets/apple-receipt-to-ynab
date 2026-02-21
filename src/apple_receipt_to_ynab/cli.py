@@ -20,14 +20,22 @@ class FriendlyArgumentParser(argparse.ArgumentParser):
         self.exit(2, f"Error: {message}\n")
 
 
+DEFAULT_CONFIG_PATH_LITERAL = "~/.asy/config.yaml"
+
+
+def _default_config_path() -> Path:
+    return Path(DEFAULT_CONFIG_PATH_LITERAL).expanduser()
+
+
 def main() -> int:
     parser = _build_arg_parser()
     args = parser.parse_args()
-    config_path = Path.cwd() / "config.yaml"
+    default_config_path = _default_config_path()
+    config_path = args.config.expanduser() if args.config is not None else default_config_path
     if not config_path.exists():
         parser.error(
-            f"Could not find 'config.yaml' at '{config_path}'. "
-            "Create a config.yaml file in the current working directory."
+            f"Could not find config file at '{config_path}'. "
+            f"Create '{default_config_path}' or provide a path with '--config /path/to/config.yaml'."
         )
 
     try:
@@ -89,7 +97,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         prog="app-store-ynab",
         description=(
             "Parse Apple subscription receipts from local .eml files or Gmail API and "
-            "write YNAB transactions using config.yaml."
+            "write YNAB transactions using ~/.asy/config.yaml by default."
         ),
     )
     parser.add_argument(
@@ -97,6 +105,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         nargs="?",
         type=Path,
         help="Path to local Apple receipt email file (.eml). Required when app.mode=local.",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        help="Path to config.yaml. Defaults to ~/.asy/config.yaml.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Parse and compute splits, but do not call YNAB API.")
     return parser
