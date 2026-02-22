@@ -8,7 +8,7 @@ Local CLI tool that parses Apple App Store subscription receipts from local `.em
 - Matches each subscription against mapping rules in `config.yaml`.
 - Creates one transaction for receipts with one subscription, or one split transaction for multiple subscription receipts.
 - Prevents duplicate transactions by looking up recent YNAB transactions (7 days prior by default).
-- With the `--dry-run` argument, always prints the processing log to stdout and does not make calls to YNAB.
+- With the `--dry-run` argument, always prints the processing log to stdout, does not write to YNAB, and may query YNAB to preview reuse/cleanup actions.
 
 ## Install using pipx
 ```bash

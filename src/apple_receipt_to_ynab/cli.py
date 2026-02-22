@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
 from apple_receipt_to_ynab.config import ConfigError, load_config
 from apple_receipt_to_ynab.gmail_client import GmailApiError
+from apple_receipt_to_ynab.logger import print_structured_stdout
 from apple_receipt_to_ynab.matcher import MappingMatchError, UnmappedSubscriptionError
 from apple_receipt_to_ynab.parser import ReceiptParseError
 from apple_receipt_to_ynab.service import ValidationError, process_receipt
@@ -75,20 +75,15 @@ def main() -> int:
         return 1
 
     if not args.dry_run:
-        print(
-            json.dumps(
-                {
-                    "event_name": "cli_process_result",
-                    "status": result.status.lower(),
-                    "receipt_id": result.receipt_id,
-                    "parent_amount_milliunits": result.parent_amount_milliunits,
-                    "message": result.message,
-                    "transaction_id": result.transaction_id,
-                },
-                ensure_ascii=True,
-                separators=(",", ":"),
-                sort_keys=True,
-            )
+        print_structured_stdout(
+            {
+                "event_name": "cli_process_result",
+                "status": result.status.lower(),
+                "receipt_id": result.receipt_id,
+                "parent_amount_milliunits": result.parent_amount_milliunits,
+                "message": result.message,
+                "transaction_id": result.transaction_id,
+            }
         )
     return 0
 

@@ -85,6 +85,24 @@ def _build_split_lines() -> list[SplitLine]:
     ]
 
 
+def _build_uncleared_candidate(
+    tx_id: str,
+    tx_date: str,
+    amount: int,
+    payee_name: str = "Apple Music",
+    category_id: str = "cat-1",
+) -> dict[str, object]:
+    return {
+        "id": tx_id,
+        "account_id": "acct-1",
+        "date": tx_date,
+        "amount": amount,
+        "payee_name": payee_name,
+        "category_id": category_id,
+        "cleared": "uncleared",
+    }
+
+
 def test_resolve_ynab_flag_color_returns_color_when_fallback_was_used() -> None:
     config = MappingConfig(
         version=1,
@@ -242,6 +260,7 @@ def test_process_receipt_dry_run_logs_to_stdout_when_log_path_missing(
     monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
     monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(service, "_list_ynab_transactions_by_account", lambda **_: [])
 
     result = process_receipt(
         receipt_path=tmp_path / "receipt.eml",
@@ -254,7 +273,8 @@ def test_process_receipt_dry_run_logs_to_stdout_when_log_path_missing(
     event = json.loads(output.strip())
     assert event["mode"] == "dry_run"
     assert event["status"] == "dry_run"
-    assert event["message"] == "Dry run completed. No transaction posted."
+    assert event["message"] == "Dry run preview: Would create a new YNAB transaction."
+    assert event["ynab_action"] == "dry_run_preview"
 
 
 def test_process_receipt_dry_run_writes_file_and_echoes_to_stdout(
@@ -270,6 +290,7 @@ def test_process_receipt_dry_run_writes_file_and_echoes_to_stdout(
     monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
     monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(service, "_list_ynab_transactions_by_account", lambda **_: [])
 
     process_receipt(
         receipt_path=tmp_path / "receipt.eml",
@@ -299,6 +320,7 @@ def test_process_receipt_stdout_flag_prints_logs_without_writing_file(
     monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
     monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
     monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(service, "_list_ynab_transactions_by_account", lambda **_: [])
 
     result = process_receipt(
         receipt_path=tmp_path / "receipt.eml",
@@ -313,7 +335,7 @@ def test_process_receipt_stdout_flag_prints_logs_without_writing_file(
     assert not log_path.exists()
 
 
-def test_process_receipt_skips_duplicate_using_ynab_lookup(tmp_path: Path, monkeypatch) -> None:
+def test_process_receipt_reuses_matching_uncleared_transaction(tmp_path: Path, monkeypatch) -> None:
     parsed = _build_parsed_receipt(tmp_path)
     matched = _build_matched()
     split_lines = _build_split_lines()
@@ -326,25 +348,23 @@ def test_process_receipt_skips_duplicate_using_ynab_lookup(tmp_path: Path, monke
     monkeypatch.setattr(
         service,
         "_list_ynab_transactions_by_account",
-        lambda **_: [
-            {
-                "id": "existing-tx-1",
-                "account_id": "acct-1",
-                "date": "2026-02-16",
-                "amount": -10800,
-                "memo": "Receipt: RID-1",
-            }
-        ],
+        lambda **_: [_build_uncleared_candidate("existing-tx-1", "2026-02-16", -10800)],
     )
     monkeypatch.setattr(service, "append_log_event", lambda *_args, **_kwargs: None)
 
     post_calls = {"value": 0}
+    update_calls: list[dict[str, object]] = []
 
     def _fake_post(**_: object) -> str:
         post_calls["value"] += 1
         return "tx-should-not-post"
 
+    def _fake_update(**kwargs: object) -> str:
+        update_calls.append(dict(kwargs))
+        return "existing-tx-1"
+
     monkeypatch.setattr(service, "_post_ynab_transaction", _fake_post)
+    monkeypatch.setattr(service, "_update_ynab_transaction", _fake_update)
 
     result = process_receipt(
         receipt_path=tmp_path / "receipt.eml",
@@ -352,9 +372,254 @@ def test_process_receipt_skips_duplicate_using_ynab_lookup(tmp_path: Path, monke
         dry_run=False,
     )
 
-    assert result.status == "duplicate"
+    assert result.status == "created"
     assert result.transaction_id == "existing-tx-1"
     assert post_calls["value"] == 0
+    assert len(update_calls) == 1
+
+
+def test_process_receipt_reuses_oldest_matching_uncleared_transaction(tmp_path: Path, monkeypatch) -> None:
+    parsed = _build_parsed_receipt(tmp_path)
+    matched = _build_matched()
+    split_lines = _build_split_lines()
+    runtime_config = _build_runtime_config(log_path=tmp_path / "run.log")
+    updated_ids: list[str] = []
+
+    monkeypatch.setattr(service, "load_config", lambda _path: runtime_config)
+    monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
+    monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
+    monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(
+        service,
+        "_list_ynab_transactions_by_account",
+        lambda **_: [
+            _build_uncleared_candidate("tx-newer", "2026-02-16", -10800),
+            _build_uncleared_candidate("tx-older", "2026-02-01", -10800),
+        ],
+    )
+    monkeypatch.setattr(service, "append_log_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(service, "_post_ynab_transaction", lambda **_: "tx-created")
+    monkeypatch.setattr(service, "_update_ynab_transaction", lambda **kwargs: updated_ids.append(str(kwargs["transaction_id"])) or str(kwargs["transaction_id"]))
+
+    result = process_receipt(
+        receipt_path=tmp_path / "receipt.eml",
+        config_path=tmp_path / "config.yaml",
+        dry_run=False,
+    )
+
+    assert result.status == "created"
+    assert result.transaction_id == "tx-older"
+    assert updated_ids == ["tx-older"]
+
+
+def test_process_receipt_multi_creates_then_deletes_matching_uncleared(tmp_path: Path, monkeypatch) -> None:
+    parsed = ParsedReceipt(
+        source_pdf=tmp_path / "receipt.eml",
+        receipt_id="RID-2",
+        receipt_date=date(2026, 2, 18),
+        currency="USD",
+        subscriptions=[
+            SubscriptionLine(description="Product A", base_amount=Decimal("5.00")),
+            SubscriptionLine(description="Product B", base_amount=Decimal("5.00")),
+        ],
+        tax_total=Decimal("0.80"),
+        grand_total=Decimal("10.80"),
+        raw_text="",
+    )
+    matched = [
+        MatchedSubscription(
+            source_description="Product A",
+            base_amount=Decimal("5.00"),
+            ynab_category_id="cat-1",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee A",
+            mapping_rule_id="rule-a",
+        ),
+        MatchedSubscription(
+            source_description="Product B",
+            base_amount=Decimal("5.00"),
+            ynab_category_id="cat-2",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee B",
+            mapping_rule_id="rule-b",
+        ),
+    ]
+    split_lines = [
+        SplitLine(
+            source_description="Product A",
+            base_milliunits=5000,
+            tax_milliunits=0,
+            total_milliunits=5000,
+            ynab_category_id="cat-1",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee A",
+            mapping_rule_id="rule-a",
+        ),
+        SplitLine(
+            source_description="Product B",
+            base_milliunits=5000,
+            tax_milliunits=800,
+            total_milliunits=5800,
+            ynab_category_id="cat-2",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee B",
+            mapping_rule_id="rule-b",
+        ),
+    ]
+    runtime_config = _build_runtime_config(log_path=tmp_path / "run.log")
+    call_order: list[str] = []
+
+    monkeypatch.setattr(service, "load_config", lambda _path: runtime_config)
+    monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
+    monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
+    monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(
+        service,
+        "_list_ynab_transactions_by_account",
+        lambda **_: [
+            _build_uncleared_candidate("dup-a", "2026-02-01", -5000, payee_name="Payee A", category_id="cat-1"),
+            _build_uncleared_candidate("dup-b", "2026-02-02", -5800, payee_name="Payee B", category_id="cat-2"),
+        ],
+    )
+    monkeypatch.setattr(service, "append_log_event", lambda *_args, **_kwargs: None)
+
+    def _fake_post(**_: object) -> str:
+        call_order.append("create")
+        return "tx-new-parent"
+
+    def _fake_delete(**kwargs: object) -> str:
+        call_order.append(f"delete:{kwargs['transaction_id']}")
+        return str(kwargs["transaction_id"])
+
+    monkeypatch.setattr(service, "_post_ynab_transaction", _fake_post)
+    monkeypatch.setattr(service, "_delete_ynab_transaction", _fake_delete)
+
+    result = process_receipt(
+        receipt_path=tmp_path / "receipt.eml",
+        config_path=tmp_path / "config.yaml",
+        dry_run=False,
+    )
+
+    assert result.status == "created"
+    assert result.transaction_id == "tx-new-parent"
+    assert result.duplicate_count == 2
+    assert call_order[0] == "create"
+    assert set(call_order[1:]) == {"delete:dup-a", "delete:dup-b"}
+
+
+def test_process_receipt_dry_run_queries_for_preview_without_writes(tmp_path: Path, monkeypatch, capsys) -> None:
+    parsed = _build_parsed_receipt(tmp_path)
+    matched = _build_matched()
+    split_lines = _build_split_lines()
+    runtime_config = _build_runtime_config(log_path=None)
+    calls = {"list": 0, "post": 0, "update": 0, "delete": 0}
+
+    monkeypatch.setattr(service, "load_config", lambda _path: runtime_config)
+    monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
+    monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
+    monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(
+        service,
+        "_list_ynab_transactions_by_account",
+        lambda **_: calls.__setitem__("list", calls["list"] + 1) or [],
+    )
+    monkeypatch.setattr(service, "_post_ynab_transaction", lambda **_: calls.__setitem__("post", calls["post"] + 1) or "tx")
+    monkeypatch.setattr(service, "_update_ynab_transaction", lambda **_: calls.__setitem__("update", calls["update"] + 1) or "tx")
+    monkeypatch.setattr(service, "_delete_ynab_transaction", lambda **_: calls.__setitem__("delete", calls["delete"] + 1) or "tx")
+
+    process_receipt(
+        receipt_path=tmp_path / "receipt.eml",
+        config_path=tmp_path / "config.yaml",
+        dry_run=True,
+    )
+
+    event = json.loads(capsys.readouterr().out.strip())
+    assert calls["list"] == 1
+    assert calls["post"] == 0
+    assert calls["update"] == 0
+    assert calls["delete"] == 0
+    assert event["ynab_action"] == "dry_run_preview"
+
+
+def test_process_receipt_delete_failure_reports_partial_cleanup_risk(tmp_path: Path, monkeypatch) -> None:
+    parsed = ParsedReceipt(
+        source_pdf=tmp_path / "receipt.eml",
+        receipt_id="RID-3",
+        receipt_date=date(2026, 2, 20),
+        currency="USD",
+        subscriptions=[
+            SubscriptionLine(description="Product A", base_amount=Decimal("5.00")),
+            SubscriptionLine(description="Product B", base_amount=Decimal("5.00")),
+        ],
+        tax_total=Decimal("0.80"),
+        grand_total=Decimal("10.80"),
+        raw_text="",
+    )
+    matched = [
+        MatchedSubscription(
+            source_description="Product A",
+            base_amount=Decimal("5.00"),
+            ynab_category_id="cat-1",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee A",
+            mapping_rule_id="rule-a",
+        ),
+        MatchedSubscription(
+            source_description="Product B",
+            base_amount=Decimal("5.00"),
+            ynab_category_id="cat-2",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee B",
+            mapping_rule_id="rule-b",
+        ),
+    ]
+    split_lines = [
+        SplitLine(
+            source_description="Product A",
+            base_milliunits=5000,
+            tax_milliunits=0,
+            total_milliunits=5000,
+            ynab_category_id="cat-1",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee A",
+            mapping_rule_id="rule-a",
+        ),
+        SplitLine(
+            source_description="Product B",
+            base_milliunits=5000,
+            tax_milliunits=800,
+            total_milliunits=5800,
+            ynab_category_id="cat-2",
+            ynab_payee_id=None,
+            ynab_payee_name="Payee B",
+            mapping_rule_id="rule-b",
+        ),
+    ]
+    runtime_config = _build_runtime_config(log_path=tmp_path / "run.log")
+
+    monkeypatch.setattr(service, "load_config", lambda _path: runtime_config)
+    monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
+    monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
+    monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+    monkeypatch.setattr(
+        service,
+        "_list_ynab_transactions_by_account",
+        lambda **_: [_build_uncleared_candidate("dup-a", "2026-02-01", -5000, payee_name="Payee A", category_id="cat-1")],
+    )
+    monkeypatch.setattr(service, "_post_ynab_transaction", lambda **_: "tx-new-parent")
+    monkeypatch.setattr(service, "append_log_event", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        service,
+        "_delete_ynab_transaction",
+        lambda **_: (_ for _ in ()).throw(YnabApiError("Could not delete matched duplicate YNAB transactions: boom. The new split transaction may already exist and some duplicate uncleared transactions may remain.")),
+    )
+
+    with pytest.raises(YnabApiError, match="may already exist"):
+        process_receipt(
+            receipt_path=tmp_path / "receipt.eml",
+            config_path=tmp_path / "config.yaml",
+            dry_run=False,
+        )
 
 
 def test_process_receipt_gmail_mode_processes_batch(tmp_path: Path, monkeypatch) -> None:
@@ -401,6 +666,6 @@ def test_process_receipt_gmail_mode_processes_batch(tmp_path: Path, monkeypatch)
 
     assert result.receipt_id == "GMAIL-BATCH"
     assert result.processed_count == 2
-    assert result.created_count == 1
-    assert result.duplicate_count == 1
-    assert post_calls["value"] == 1
+    assert result.created_count == 2
+    assert result.duplicate_count == 0
+    assert post_calls["value"] == 2

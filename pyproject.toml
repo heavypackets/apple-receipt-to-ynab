@@ -13,6 +13,7 @@ dependencies = [
   "google-auth>=2.0.0",
   "ynab>=1.5.1",
   "PyYAML>=6.0.1",
+  "rich>=13",
 ]
 
 [project.optional-dependencies]

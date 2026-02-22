@@ -112,6 +112,7 @@ def test_main_prints_success_summary_only_for_non_dry_run(tmp_path: Path, monkey
     output = capsys.readouterr().out
 
     assert exit_code == 0
+    assert '  "event_name"' in output
     payload = json.loads(output.strip())
     assert payload["event_name"] == "cli_process_result"
     assert payload["status"] == "created"

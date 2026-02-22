@@ -9,5 +9,8 @@ if [[ ! -x "$PYTHON_BIN" ]]; then
   python3 -m venv "$VENV_DIR"
 fi
 
-"$PYTHON_BIN" -m pip install --no-build-isolation -e "$ROOT_DIR[dev]"
+# Use --ignore-installed so a broken editable metadata state (missing RECORD)
+# does not block developer test runs. Use --no-deps to keep test runs
+# offline-friendly and avoid unnecessary resolver/network calls.
+"$PYTHON_BIN" -m pip install --ignore-installed --no-deps --no-build-isolation -e "$ROOT_DIR[dev]"
 "$PYTHON_BIN" -m pytest "$@"
