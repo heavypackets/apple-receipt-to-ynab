@@ -58,6 +58,7 @@ mappings:
 def test_main_errors_when_default_config_is_missing(tmp_path: Path, monkeypatch, capsys) -> None:
     receipt_path = tmp_path / "receipt.eml"
     receipt_path.write_text("", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "home-without-config"))
     monkeypatch.setattr(sys, "argv", ["app-store-ynab", str(receipt_path)])
 
     with pytest.raises(SystemExit) as exc:
@@ -186,3 +187,22 @@ def test_main_uses_explicit_config_argument(tmp_path: Path, monkeypatch) -> None
     exit_code = cli.main()
 
     assert exit_code == 0
+
+
+def test_main_passes_stdout_flag_to_process_receipt(tmp_path: Path, monkeypatch) -> None:
+    receipt_path = tmp_path / "receipt.eml"
+    _prepare_default_config(monkeypatch, tmp_path, mode="local")
+    receipt_path.write_text("", encoding="utf-8")
+    captured_kwargs: dict[str, object] = {}
+
+    def _fake_process_receipt(**kwargs: object) -> ProcessResult:
+        captured_kwargs.update(kwargs)
+        return ProcessResult("DRY_RUN", "ok", "rid", 0, ())
+
+    monkeypatch.setattr(cli, "process_receipt", _fake_process_receipt)
+    monkeypatch.setattr(sys, "argv", ["app-store-ynab", "--stdout", str(receipt_path), "--dry-run"])
+
+    exit_code = cli.main()
+
+    assert exit_code == 0
+    assert captured_kwargs["log_to_stdout"] is True

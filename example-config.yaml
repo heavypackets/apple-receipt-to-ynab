@@ -8,13 +8,13 @@ ynab:
 
 app:
   mode: "local" # "local" or "email"
-  log_path: "app_store_ynab.log"
+  log_path: "~/.asy/asy.log"
 
 email:
   subject_filter: "Your receipt from Apple."
   sender_filter: "no_reply@email.apple.com"
   max_age_days: 7
-  service_account_key_path: "./gmail-service-account.json"
+  service_account_key_path: "~/.asy/gmail-service-account.json"
   delegated_user_email: "finance-bot@example.com"
   max_results: 10
   query_extra: "in:inbox"

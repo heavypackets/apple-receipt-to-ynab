@@ -286,6 +286,33 @@ def test_process_receipt_dry_run_writes_file_and_echoes_to_stdout(
     assert file_event == output_event
 
 
+def test_process_receipt_stdout_flag_prints_logs_without_writing_file(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    parsed = _build_parsed_receipt(tmp_path)
+    matched = _build_matched()
+    split_lines = _build_split_lines()
+    log_path = tmp_path / "run.log"
+    runtime_config = _build_runtime_config(log_path=log_path)
+
+    monkeypatch.setattr(service, "load_config", lambda _path: runtime_config)
+    monkeypatch.setattr(service, "parse_receipt_file", lambda _path, default_currency: parsed)
+    monkeypatch.setattr(service, "match_subscriptions", lambda _subs, _cfg: matched)
+    monkeypatch.setattr(service, "build_split_lines", lambda _matched, _tax: split_lines)
+
+    result = process_receipt(
+        receipt_path=tmp_path / "receipt.eml",
+        config_path=tmp_path / "config.yaml",
+        dry_run=True,
+        log_to_stdout=True,
+    )
+
+    output = capsys.readouterr().out
+    assert result.status == "DRY_RUN"
+    assert json.loads(output.strip())["event_name"] == "receipt_processed"
+    assert not log_path.exists()
+
+
 def test_process_receipt_skips_duplicate_using_ynab_lookup(tmp_path: Path, monkeypatch) -> None:
     parsed = _build_parsed_receipt(tmp_path)
     matched = _build_matched()

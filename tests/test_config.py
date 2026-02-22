@@ -3,8 +3,10 @@ from pathlib import Path
 import pytest
 
 from apple_receipt_to_ynab.config import (
+    DEFAULT_APP_LOG_PATH,
     DEFAULT_EMAIL_MAX_AGE_DAYS,
     DEFAULT_EMAIL_MAX_RESULTS,
+    DEFAULT_EMAIL_SERVICE_ACCOUNT_KEY_PATH,
     DEFAULT_EMAIL_SENDER_FILTER,
     DEFAULT_EMAIL_SUBJECT_FILTER,
     DEFAULT_YNAB_API_URL,
@@ -64,7 +66,7 @@ mappings:
     assert cfg.mappings.fallback.ynab_flag_color == "yellow"
 
 
-def test_load_config_defaults_api_url_and_stdout_logging_when_missing(tmp_path: Path) -> None:
+def test_load_config_defaults_api_url_and_log_file_when_missing(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     path.write_text(
         """
@@ -91,7 +93,7 @@ mappings:
 
     assert cfg.ynab.api_url == DEFAULT_YNAB_API_URL
     assert cfg.ynab.lookback_days == DEFAULT_YNAB_LOOKBACK_DAYS
-    assert cfg.app.log_path is None
+    assert cfg.app.log_path == DEFAULT_APP_LOG_PATH
 
 
 def test_load_config_parses_email_mode_and_relative_service_account_path(tmp_path: Path) -> None:
@@ -195,7 +197,7 @@ mappings:
         load_config(path)
 
 
-def test_load_config_rejects_email_mode_without_service_account_path(tmp_path: Path) -> None:
+def test_load_config_defaults_email_mode_service_account_path_when_missing(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
     path.write_text(
         """
@@ -221,8 +223,9 @@ mappings:
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigError, match="service_account_key_path"):
-        load_config(path)
+    cfg = load_config(path)
+    assert cfg.email.service_account_key_path == DEFAULT_EMAIL_SERVICE_ACCOUNT_KEY_PATH
+    assert cfg.email.delegated_user_email == "robot@example.com"
 
 
 def test_load_config_rejects_invalid_lookback_days(tmp_path: Path) -> None:

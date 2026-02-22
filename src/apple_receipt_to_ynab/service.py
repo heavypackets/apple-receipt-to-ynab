@@ -45,15 +45,16 @@ def process_receipt(
     receipt_path: Path | None,
     config_path: Path,
     dry_run: bool,
+    log_to_stdout: bool = False,
 ) -> ProcessResult:
     log_path: Path | None = None
     source_label = str(receipt_path) if receipt_path is not None else "email://batch"
     try:
         runtime_config = load_config(config_path)
-        log_path = runtime_config.app.log_path
+        log_path = None if log_to_stdout else runtime_config.app.log_path
 
         if runtime_config.app.mode == "email":
-            return _process_gmail_batch(runtime_config=runtime_config, dry_run=dry_run)
+            return _process_gmail_batch(runtime_config=runtime_config, dry_run=dry_run, log_to_stdout=log_to_stdout)
 
         if receipt_path is None:
             raise ValidationError("receipt_path is required when app.mode is 'local'.")
@@ -61,6 +62,7 @@ def process_receipt(
             receipt_path=receipt_path,
             runtime_config=runtime_config,
             dry_run=dry_run,
+            log_to_stdout=log_to_stdout,
         )
     except Exception as exc:
         append_log_event(
@@ -76,7 +78,9 @@ def process_receipt(
         raise
 
 
-def _process_local_file_receipt(receipt_path: Path, runtime_config: RuntimeConfig, dry_run: bool) -> ProcessResult:
+def _process_local_file_receipt(
+    receipt_path: Path, runtime_config: RuntimeConfig, dry_run: bool, log_to_stdout: bool
+) -> ProcessResult:
     config = runtime_config.mappings
     receipt = parse_receipt_file(receipt_path, default_currency=config.defaults.default_currency)
 
@@ -90,15 +94,17 @@ def _process_local_file_receipt(receipt_path: Path, runtime_config: RuntimeConfi
         runtime_config=runtime_config,
         dry_run=dry_run,
         existing_transactions=existing_transactions,
+        log_to_stdout=log_to_stdout,
     )
 
 
-def _process_gmail_batch(runtime_config: RuntimeConfig, dry_run: bool) -> ProcessResult:
+def _process_gmail_batch(runtime_config: RuntimeConfig, dry_run: bool, log_to_stdout: bool) -> ProcessResult:
     config = runtime_config.mappings
+    log_path = None if log_to_stdout else runtime_config.app.log_path
     gmail_messages = fetch_gmail_messages(runtime_config.email)
     if not gmail_messages:
         append_log_event(
-            runtime_config.app.log_path,
+            log_path,
             {
                 "timestamp": now_local_iso(),
                 "event_name": "gmail_batch_noop",
@@ -136,6 +142,7 @@ def _process_gmail_batch(runtime_config: RuntimeConfig, dry_run: bool) -> Proces
             runtime_config=runtime_config,
             dry_run=dry_run,
             existing_transactions=existing_transactions,
+            log_to_stdout=log_to_stdout,
         )
         processed_count += 1
         if result.status == "created":
@@ -175,6 +182,7 @@ def _process_parsed_receipt(
     runtime_config: RuntimeConfig,
     dry_run: bool,
     existing_transactions: dict[TransactionKey, str | None] | None,
+    log_to_stdout: bool = False,
 ) -> ProcessResult:
     config = runtime_config.mappings
     matched = match_subscriptions(receipt.subscriptions, config)
@@ -220,7 +228,7 @@ def _process_parsed_receipt(
                 existing_transactions[key] = transaction_id
 
     append_log_event(
-        runtime_config.app.log_path,
+        None if log_to_stdout else runtime_config.app.log_path,
         _build_log_event(
             receipt=receipt,
             split_lines=split_lines,

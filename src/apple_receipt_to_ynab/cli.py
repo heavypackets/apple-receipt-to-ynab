@@ -57,6 +57,7 @@ def main() -> int:
             receipt_path=args.receipt_path,
             config_path=config_path,
             dry_run=args.dry_run,
+            log_to_stdout=args.stdout,
         )
     except UnmappedSubscriptionError as exc:
         print(f"Error (exit code 2): {exc}", file=sys.stderr)
@@ -110,6 +111,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         "--config",
         type=Path,
         help="Path to config.yaml. Defaults to ~/.asy/config.yaml.",
+    )
+    parser.add_argument(
+        "--stdout",
+        action="store_true",
+        help="Write log events to stdout instead of the configured log file.",
     )
     parser.add_argument("--dry-run", action="store_true", help="Parse and compute splits, but do not call YNAB API.")
     return parser

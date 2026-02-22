@@ -26,6 +26,8 @@ DEFAULT_EMAIL_SUBJECT_FILTER = "Your receipt from Apple."
 DEFAULT_EMAIL_SENDER_FILTER = "no_reply@email.apple.com"
 DEFAULT_EMAIL_MAX_AGE_DAYS = 7
 DEFAULT_EMAIL_MAX_RESULTS = 10
+DEFAULT_EMAIL_SERVICE_ACCOUNT_KEY_PATH = Path("~/.asy/gmail-service-account.json").expanduser()
+DEFAULT_APP_LOG_PATH = Path("~/.asy/asy.log").expanduser()
 
 
 class ConfigError(ValueError):
@@ -72,7 +74,10 @@ def load_config(path: Path) -> RuntimeConfig:
         allowed = ", ".join(sorted(ALLOWED_APP_MODES))
         raise _config_error(f"'app.mode' must be one of: {allowed}.")
     log_path = _optional_str(app_raw, "log_path")
-    app = AppConfig(mode=app_mode, log_path=Path(log_path) if log_path else None)
+    app = AppConfig(
+        mode=app_mode,
+        log_path=Path(log_path).expanduser() if log_path else DEFAULT_APP_LOG_PATH,
+    )
 
     email = _parse_email(path=path, raw=raw.get("email"), app_mode=app_mode)
 
@@ -94,17 +99,22 @@ def _parse_email(path: Path, raw: Any, app_mode: str) -> EmailConfig:
     sender_filter = _optional_str(raw, "sender_filter") or DEFAULT_EMAIL_SENDER_FILTER
     max_age_days = _optional_positive_int(raw, "max_age_days") or DEFAULT_EMAIL_MAX_AGE_DAYS
     if app_mode == "email":
-        key_path_raw = _required_str(raw, "service_account_key_path")
+        key_path_raw = _optional_str(raw, "service_account_key_path")
+        if key_path_raw is None:
+            key_path = DEFAULT_EMAIL_SERVICE_ACCOUNT_KEY_PATH
+        else:
+            key_path = Path(key_path_raw).expanduser()
+            if not key_path.is_absolute():
+                key_path = path.parent / key_path
         delegated_user_email = _required_str(raw, "delegated_user_email")
     else:
         key_path_raw = _optional_str(raw, "service_account_key_path")
+        key_path = None
+        if key_path_raw is not None:
+            key_path = Path(key_path_raw).expanduser()
+            if not key_path.is_absolute():
+                key_path = path.parent / key_path
         delegated_user_email = _optional_str(raw, "delegated_user_email")
-
-    key_path: Path | None = None
-    if key_path_raw is not None:
-        key_path = Path(key_path_raw)
-        if not key_path.is_absolute():
-            key_path = path.parent / key_path
 
     return EmailConfig(
         subject_filter=subject_filter,

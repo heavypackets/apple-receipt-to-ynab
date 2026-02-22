@@ -40,13 +40,13 @@ ynab:
 
 app:
   mode: "local" # "local" or "email"
-  log_path: "app_store_ynab.log" # optional; stdout when omitted
+  log_path: "~/.asy/asy.log" # optional; defaults to ~/.asy/asy.log when omitted
 
 email: # required only when app.mode=email
   subject_filter: "Your receipt from Apple." # optional
   sender_filter: "no_reply@email.apple.com" # optional
   max_age_days: 7 # optional
-  service_account_key_path: "./gmail-service-account.json"
+  service_account_key_path: "~/.asy/gmail-service-account.json" # optional; defaults to ~/.asy/gmail-service-account.json when omitted
   delegated_user_email: "finance-bot@example.com"
   max_results: 10 # optional
   query_extra: "in:inbox" # optional
@@ -71,11 +71,6 @@ mappings:
     ynab_payee_name: "Apple"
     ynab_flag_color: "yellow"
 ```
-
-### Notes
-
-- If `app.log_path` is omitted, logging defaults to stdout.
-- If fallback is used and `mappings.fallback.ynab_flag_color` is set, fallback color overrides the default flag color.
 
 ## Run
 
